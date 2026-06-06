@@ -1,0 +1,4 @@
+symbol,base_asset,quote_asset,display_name
+BTCUSDT,BTC,USDT,Bitcoin
+ETHUSDT,ETH,USDT,Ethereum
+SOLUSDT,SOL,USDT,Solana

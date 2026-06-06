@@ -1,0 +1,7 @@
+# Aucun package requis : les tests (not_null, unique) sont natifs dbt et les
+# macros de flatten sont fournies dans macros/.
+#
+# Optionnel — vues sémantiques Snowflake :
+# packages:
+#   - package: Snowflake-Labs/dbt_semantic_view
+#     version: 1.0.3

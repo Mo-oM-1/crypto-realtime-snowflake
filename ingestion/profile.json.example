@@ -1,0 +1,7 @@
+{
+  "account": "<account_identifier>",
+  "user": "SVC_CRYPTO",
+  "url": "https://<account_identifier>.snowflakecomputing.com:443",
+  "private_key_file": "rsa_key.p8",
+  "role": "CRYPTO_PIPELINE_ROLE"
+}

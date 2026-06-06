@@ -1,0 +1,15 @@
+# profiles.yml — pour dbt Projects on Snowflake (exécution dans une Workspace Snowsight).
+# account/user peuvent rester arbitraires : le projet tourne sous TON contexte Snowflake
+# (rôle/entrepôt ci-dessous). Aucun secret ici.
+crypto_realtime:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: unused
+      user: unused
+      role: CRYPTO_PIPELINE_ROLE
+      warehouse: WH_CRYPTO_XS
+      database: ANALYTICS
+      schema: PUBLIC          # dbt créera PUBLIC_STAGING / PUBLIC_INTERMEDIATE / PUBLIC_MARTS
+      threads: 8

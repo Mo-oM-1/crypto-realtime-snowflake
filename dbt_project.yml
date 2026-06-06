@@ -1,0 +1,30 @@
+name: crypto_realtime
+version: 1.0.0
+config-version: 2
+profile: crypto_realtime
+
+model-paths: [models]
+analysis-paths: [analyses]
+test-paths: [tests]
+seed-paths: [seeds]
+macro-paths: [macros]
+snapshot-paths: [snapshots]
+
+# Architecture medallion. Les couches staging/intermediate/marts sont
+# GÉNÉRÉES par l'agent Cortex Code (skill $flatten-variant), pas à la main.
+models:
+  crypto_realtime:
+    staging:
+      +materialized: view
+      +schema: staging
+    intermediate:
+      +materialized: table
+      +schema: intermediate
+    marts:
+      +materialized: table
+      +schema: marts
+      # Les modèles TEMPS RÉEL portent leur propre config dans le fichier :
+      #   - vues live      -> {{ config(materialized='view') }}
+      #   - Dynamic Tables -> {{ config(materialized='dynamic_table',
+      #                                 target_lag='1 minute',
+      #                                 snowflake_warehouse='WH_CRYPTO_XS') }}

@@ -1,0 +1,4 @@
+# SDK Snowflake Streaming Ingest (Snowpipe Streaming, architecture haute-performance)
+snowpipe-streaming
+# Client WebSocket pour les flux Binance
+websocket-client

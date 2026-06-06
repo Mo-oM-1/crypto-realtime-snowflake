@@ -1,0 +1,18 @@
+# Secrets — ne JAMAIS commiter
+profile.json
+rsa_key.p8
+rsa_key.pub
+*.p8
+.env
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# dbt
+target/
+dbt_packages/
+logs/
+.user.yml
