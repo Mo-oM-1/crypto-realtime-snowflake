@@ -91,6 +91,7 @@ class CryptoIngestor:
         self.depth = TableChannel(DEPTH_TABLE)
         self._stop = threading.Event()
         self._connected = threading.Event()
+        self.ws = None
 
     # ---- callbacks WebSocket ----
     def on_open(self, _ws):
@@ -129,6 +130,11 @@ class CryptoIngestor:
 
     def stop(self, *_):
         self._stop.set()
+        if self.ws is not None:                 # débloque run_forever() pour sortir proprement
+            try:
+                self.ws.close()
+            except Exception:
+                pass
 
     def close(self):
         self.trades.close()
@@ -162,6 +168,7 @@ def main():
             on_error=ing.on_error,
             on_close=ing.on_close,
         )
+        ing.ws = ws  # pour que stop() (Ctrl+C) puisse fermer la connexion
         # ping_interval gère le keep-alive ; run_forever bloque jusqu'à déconnexion
         ws.run_forever(ping_interval=180, ping_timeout=10)
         if ing._stop.is_set():
