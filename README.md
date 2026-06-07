@@ -31,8 +31,9 @@
 
 ```mermaid
 flowchart TB
-    BWS["Binance WebSocket - @trade + @depth"]
+    BWS["Binance WebSocket<br/>@trade + @depth"]
     BWS -->|"Snowpipe Streaming ~5-10s"| RAW
+
     subgraph SF["Snowflake - dbt Projects on Snowflake"]
         direction TB
         RAW["Bronze - RAW VARIANT<br/>raw_trades / raw_depth"]
@@ -41,16 +42,17 @@ flowchart TB
         RAW -->|"flatten-variant (agent)"| STG
         STG -->|"realtime-marts (agent)"| MARTS
     end
-    MARTS --> DASH["Streamlit - dashboard live"]
-    MARTS --> OBS["Observabilite / SLO"]
-    subgraph GOV["Detection auto, remediation agentique (revue humaine)"]
-        direction TB
-        DET["Tasks / Alerts planifiees<br/>drift / qualite / fraicheur"]
-        REM["check-schema-drift<br/>generate-quality-tests"]
-        DET -->|"alerte -> pipeline_log"| REM
+
+    MARTS --> DASH["Streamlit dashboard live"]
+    MARTS --> OBS["Observabilité / SLO"]
+
+    subgraph GOV["Gouvernance - détection auto + remédiation agentique (revue humaine)"]
+        direction LR
+        DET["Détection auto<br/>Tasks / Alerts<br/>drift / qualité / fraîcheur"] -->|"alerte -> pipeline_log"| REM["Remédiation (agent, revue)<br/>check-schema-drift<br/>generate-quality-tests"]
     end
-    RAW -.-> DET
-    REM -.->|"fix (review)"| STG
+
+    SF -.->|"drift / échec"| GOV
+    GOV -.->|"corrige (revue)"| SF
 ```
 
 - **Source** : Binance WebSocket, `@trade` (transactions) + `@depth` (carnet d'ordres, JSON imbriqué).
