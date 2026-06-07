@@ -28,6 +28,43 @@ staging (vues, flatten) → intermediate (tables) → marts
 Streamlit (auto-refresh) · Observabilité / SLO
 ```
 
+## Agents & orchestration
+
+Cœur du projet : la couche de transformation **et sa maintenance** sont prises en charge par un
+agent IA natif Snowflake — **Cortex Code (CoCo)** — via **3 skills spécialisés**. Principe :
+on **automatise la détection** (SQL planifié), la **remédiation reste agentique sous revue humaine**
+(pas de pilote automatique).
+
+**Les 3 skills (rôles) :**
+
+| Skill | Rôle | Déclenchement |
+|---|---|---|
+| `flatten-variant` (+ `realtime-marts`) | **Build** — flatten du VARIANT → staging → intermediate → marts (vues live + Dynamic Tables) | à la demande |
+| `check-schema-drift` | **Maintain / self-heal** — détecte les clés/types non mappés et étend le staging (additif) | sur alerte de drift |
+| `generate-quality-tests` | **Quality** — profile les modèles et génère des tests métier (invariants OHLC / order book, ranges, RSI) | à la demande / sur échec |
+
+**Orchestration automatique (détection SQL → remédiation agentique) :**
+
+| Boucle | Détection auto (Task / Alert) | Signal | Remédiation (agent, revue humaine) |
+|---|---|---|---|
+| Schéma | `crypto_schema_drift_check` (quotidien) | `pipeline_log` · DRIFT | `check-schema-drift` |
+| Qualité | `crypto_dbt_test` (horaire) + `crypto_quality_check` | `pipeline_log` · TEST_FAILED | `generate-quality-tests` / fix |
+| Fraîcheur | `crypto_freshness_alert` (5 min) | `pipeline_log` · STALE | vérifier / relancer le consumer |
+
+```
+Ingestion (Snowpipe Streaming) → RAW (VARIANT)
+   │  [AGENT · build]  flatten-variant / realtime-marts
+   ▼  modèles dbt (staging → marts, vues live + Dynamic Tables) → dashboard
+   │
+   ▼  [DÉTECTION AUTO · SQL]  drift (quotidien) · tests (horaire) · fraîcheur → pipeline_log / alertes
+   │  signal
+   ▼  [AGENT · maintain, sous revue humaine]  check-schema-drift · generate-quality-tests
+```
+
+**Gouvernance** : on ne « cron » pas l'agent. La détection est automatisée et **déclenche** une
+intervention agentique **validée par un humain avant commit** (anti « vibe coding ») — auto-réparation
+assistée, pas aveugle.
+
 ## Structure du repo
 
 ```
