@@ -87,6 +87,27 @@ Then run dbt compile, dbt run, dbt test.
 
 ---
 
+## $check-schema-drift
+
+**But :** détecter la dérive de schéma dans les tables VARIANT brutes et étendre les modèles staging
+de façon additive (auto-réparation). Voir `.cortex/skills/check-schema-drift/SKILL.md`.
+
+**Prompt :**
+
+```
+Check schema drift on RAW.CRYPTO.RAW_TRADES and RAW.CRYPTO.RAW_DEPTH.
+Profile the keys/types present under RECORD:data (and the top-level RECORD keys), then compare them to
+the known field mapping (in the check-schema-drift skill) and to the columns currently exposed by
+ANALYTICS.PUBLIC_STAGING.STG_TRADES / STG_DEPTH_LEVELS.
+Report NEW keys, TYPE changes and MISSING keys. For any NEW key or type change, additively extend the
+relevant staging model (casts per conventions: NUMBER(38,8) for money/quantity, TO_TIMESTAMP_NTZ(x,3)
+for epoch-ms, ::BOOLEAN, flatten objects/arrays) WITHOUT removing existing columns. Then run
+EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build' and confirm tests are green.
+If nothing changed, report "no drift detected".
+```
+
+---
+
 ### Règles de gouvernance (anti « vibe coding »)
 
 - **Revue humaine** systématique du SQL généré (diff Git) avant merge.
