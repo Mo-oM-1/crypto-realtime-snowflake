@@ -108,6 +108,26 @@ If nothing changed, report "no drift detected".
 
 ---
 
+## $generate-quality-tests
+
+**But :** profiler les modèles et générer des tests qualité métier (ranges, catégoriels, temporel,
+invariants croisés). Voir `.cortex/skills/generate-quality-tests/SKILL.md`.
+
+**Prompt :**
+
+```
+Profile the dbt models in ANALYTICS.PUBLIC_STAGING / PUBLIC_INTERMEDIATE / PUBLIC_MARTS and generate
+domain-aware data-quality tests. No dbt_utils/dbt_expectations available, so use built-in column tests
+(not_null, accepted_values) in _schema.yml plus SINGULAR tests in tests/ for ranges and cross-field
+invariants. Cover at least: price/quantity > 0; side in ('bid','ask'); OHLC invariants
+(high >= low/open/close, low <= open/close, vwap between low and high); order-book invariants
+(best_bid <= best_ask, spread_bps >= 0, imbalance between 0 and 1, microprice between best_bid and
+best_ask); rsi_14 between 0 and 100; no future traded_at. Name singular tests assert_<model>_<rule>.sql.
+Then run dbt test and report. If a test fails on real data, flag it as a genuine data issue.
+```
+
+---
+
 ### Règles de gouvernance (anti « vibe coding »)
 
 - **Revue humaine** systématique du SQL généré (diff Git) avant merge.
