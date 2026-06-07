@@ -52,7 +52,7 @@ with col1:
             )
             .properties(height=300)
         )
-        st.altair_chart(line, use_container_width=True)
+        st.altair_chart(line, width="stretch")
 
         vol = (
             alt.Chart(ohlcv)
@@ -63,7 +63,7 @@ with col1:
             )
             .properties(height=160)
         )
-        st.altair_chart(vol, use_container_width=True)
+        st.altair_chart(vol, width="stretch")
 
 with col2:
     st.subheader("Order book (live)")
@@ -86,6 +86,6 @@ movers = session.sql(f"""
     QUALIFY ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY minute DESC) = 1
     ORDER BY ABS(price_change_pct_5min) DESC
 """).to_pandas()
-st.dataframe(movers, use_container_width=True)
+st.dataframe(movers, width="stretch")
 
 st.caption("Vues calculées à la lecture -> données fraîches à la seconde (Snowpipe Streaming).")
