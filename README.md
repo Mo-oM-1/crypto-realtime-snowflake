@@ -23,7 +23,7 @@
 - 🤖 **Agentic** — la couche dbt (flatten + marts) est **générée par Cortex Code**, pas écrite à la main.
 - 🩹 **Self-healing** — un agent détecte la dérive de schéma et **étend les modèles staging tout seul**.
 - ✅ **Qualité auto** — un agent génère des **tests métier** (invariants OHLC / order book) — il a même **trouvé un vrai bug**.
-- ⚡ **Vrai temps réel** — Snowpipe Streaming + vues calculées à la lecture : **latence p95 ~0,16 s**, **~260 trades/s**.
+- ⚡ **Vrai temps réel** — Snowpipe Streaming + vues calculées à la lecture : **latence p95 ~0,13 s**, **~900 trades/s**.
 - 🔭 **Production** — SLO mesurés, monitoring/alertes, **FinOps** (resource monitor), exploitation 24/7.
 - 🛡️ **Gouvernance** — détection automatisée → remédiation agentique **validée par un humain avant commit**.
 
@@ -87,9 +87,9 @@ Mesuré en conditions réelles (BTC, ETH, SOL — consumer actif) :
 
 | Métrique | Valeur |
 |---|---|
-| ⚡ Latence d'ingestion (event → réception), **p95** | **~0,16 s** (moy. ~0,11 s) |
+| ⚡ Latence d'ingestion (event → réception), **p95** | **~0,13 s** (moy. ~0,10 s) |
 | 🛰️ Latence end-to-end (→ requêtable) | + commit Snowpipe ~5-10 s → **≪ SLO 15 s** |
-| 🚀 Débit | **~260 trades/s** (≈ 79 000 / 5 min) |
+| 🚀 Débit | **~900 trades/s** (≈ 280 000 / 5 min) |
 | 🧱 Modèles dbt | staging → intermediate → marts (vues live + Dynamic Tables) |
 | ✅ Tests dbt | **100 % verts** (not_null, unique, accepted_values, invariants) |
 | 🤖 Couche de modélisation | **générée par l'agent Cortex Code** |
@@ -113,6 +113,12 @@ L'agent repère `x_signal` (clé non mappée dans le VARIANT), l'ajoute au stagi
 | ![Bug diagnostiqué](docs/screenshots/quality-test-bug-diagnosis.png) | ![Bug corrigé](docs/screenshots/quality-test-bug-fix.png) |
 
 Un test **auto-généré** détecte un carnet d'ordres croisé (`best_bid > best_ask`). L'agent diagnostique la cause racine, **signale pour revue humaine**, puis corrige → tests verts au niveau `error`.
+
+### ⚡ Temps réel & SLO — latence d'ingestion mesurée
+
+![SLO de latence](docs/screenshots/latency-slo.png)
+
+Latence event Binance → réception : **moyenne ~0,10 s, p95 ~0,13 s** sur **~900 trades/s** (BTC / ETH / SOL) — très en dessous du SLO de 15 s.
 
 ## 🚀 Quickstart
 
