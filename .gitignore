@@ -1,4 +1,4 @@
-# Secrets — ne JAMAIS commiter
+# Secrets - ne JAMAIS commiter
 profile.json
 rsa_key.p8
 rsa_key.pub
@@ -16,3 +16,6 @@ target/
 dbt_packages/
 logs/
 .user.yml
+
+# macOS
+.DS_Store

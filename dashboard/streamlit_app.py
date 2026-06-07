@@ -10,6 +10,7 @@ Déploiement : Snowsight -> Streamlit -> New app (warehouse WH_CRYPTO_XS).
 Les vues étant calculées à la lecture, chaque refresh affiche l'état ~temps réel.
 """
 
+import altair as alt
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
 
@@ -35,9 +36,34 @@ with col1:
         ORDER BY minute
     """).to_pandas()
     if not ohlcv.empty:
-        ohlcv = ohlcv.set_index("MINUTE")
-        st.line_chart(ohlcv[["CLOSE", "VWAP"]])
-        st.bar_chart(ohlcv[["VOLUME"]])
+        # Prix (close + vwap) : axe Y serré (zero=False) pour bien voir les 2 lignes,
+        # axe X formaté en HH:MM (évite l'affichage ".500" au zoom).
+        price = ohlcv.melt(
+            id_vars="MINUTE", value_vars=["CLOSE", "VWAP"],
+            var_name="série", value_name="prix",
+        )
+        line = (
+            alt.Chart(price)
+            .mark_line()
+            .encode(
+                x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
+                y=alt.Y("prix:Q", scale=alt.Scale(zero=False), title="prix"),
+                color=alt.Color("série:N", title=None),
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(line, use_container_width=True)
+
+        vol = (
+            alt.Chart(ohlcv)
+            .mark_bar()
+            .encode(
+                x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
+                y=alt.Y("VOLUME:Q", title="volume"),
+            )
+            .properties(height=160)
+        )
+        st.altair_chart(vol, use_container_width=True)
 
 with col2:
     st.subheader("Order book (live)")

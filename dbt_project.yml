@@ -4,11 +4,8 @@ config-version: 2
 profile: crypto_realtime
 
 model-paths: [models]
-analysis-paths: [analyses]
 test-paths: [tests]
 seed-paths: [seeds]
-macro-paths: [macros]
-snapshot-paths: [snapshots]
 
 # Architecture medallion. Les couches staging/intermediate/marts sont
 # GÉNÉRÉES par l'agent Cortex Code (skill $flatten-variant), pas à la main.

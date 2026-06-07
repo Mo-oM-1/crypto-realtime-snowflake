@@ -32,7 +32,7 @@ The RAW tables are fed by **Snowpipe Streaming** with the **raw Binance combined
 
 Automatically detects VARIANT columns, analyzes their JSON structure, and generates a 3-layer dbt project:
 
-- **Staging**: flatten VARIANT columns using the project macros, sourced directly from RAW tables (`{{ source() }}`), materialized as **views**.
+- **Staging**: flatten VARIANT columns with inline `LATERAL FLATTEN` / dot-notation, sourced directly from RAW tables (`{{ source() }}`), materialized as **views**.
 - **Intermediate**: enrichment and joins between staging models (`{{ ref('stg_...') }}`), materialized as **tables**.
 - **Marts**: dimensions and facts (`{{ ref('int_...') }}`), ready for consumption.
 
@@ -76,11 +76,11 @@ ORDER BY f2.key;
 
 ## Step 3: Generate the dbt staging models
 
-Use the existing project macros depending on the case:
+Write the flatten directly in SQL, choosing the pattern per key type:
 
-- **`flatten_json_column`** — generic auto-detection of scalar/object/array keys (also `PARSE_JSON` for text JSON).
-- **`flatten_napta_json`** — configurable `LATERAL FLATTEN` with scalars, nested objects, and arrays.
-- **`flatten_array`** / **`flatten_whoz_array`** — indexed arrays with sub-fields.
+- **Scalars** (`p`, `q`, `t`, ...): colon/dot access + cast, e.g. `record:data:p::number(38,8) AS price`.
+- **Nested objects**: dot access to sub-keys, e.g. `record:data:location.city::string AS city`.
+- **Arrays** (`bids`, `asks`): `LATERAL FLATTEN(input => record:data:bids)` to get one row per element, with `f.index` as the level and `f.value[0]/[1]` as the fields.
 
 ### Best Practices
 

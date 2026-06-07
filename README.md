@@ -122,6 +122,12 @@ Un test **auto-généré** détecte un carnet d'ordres croisé (`best_bid > best
 
 Latence event Binance -> réception : **moyenne ~0,10 s, p95 ~0,13 s** sur **~900 trades/s** (BTC / ETH / SOL), bien en dessous du SLO de 15 s.
 
+### Service temps réel : dashboard Streamlit (in Snowflake)
+
+![Dashboard Streamlit](docs/screenshots/dashboard.png)
+
+OHLCV 1 min (close / VWAP), métriques d'order book (mid, spread, imbalance, microprice) et top movers, rafraîchis en continu sur les vues live (Snowpipe Streaming).
+
 ## Quickstart
 
 ```bash
@@ -162,8 +168,7 @@ python stream_to_snowflake.py
 │   ├── check-schema-drift/       #   self-healing
 │   └── generate-quality-tests/   #   qualite
 ├── AGENTS.md                     # prompts reutilisables ($flatten-variant, $realtime-marts, ...)
-├── macros/                       # macros de flatten
-├── models/                       # VIDE au depart, GENERE par Cortex Code
+├── models/                       # GENERE par Cortex Code (flatten + marts)
 ├── seeds/dim_symbols.csv
 ├── dashboard/streamlit_app.py
 └── runbook/cortex_code_prompts.md
