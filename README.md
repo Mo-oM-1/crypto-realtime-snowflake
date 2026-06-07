@@ -92,6 +92,38 @@ Puis `dbt seed` + `dbt build`. Détails : [`runbook/cortex_code_prompts.md`](./r
 ### 4. Dashboard
 Déploie `dashboard/streamlit_app.py` en **Streamlit in Snowflake** (warehouse `WH_CRYPTO_XS`).
 
+## Résultats & SLO
+
+Mesuré en conditions réelles (3 symboles : BTC, ETH, SOL, consumer actif) :
+
+| Métrique | Valeur |
+|---|---|
+| Latence d'ingestion (event Binance → réception), p95 | **~0,16 s** (moy. ~0,11 s) |
+| Latence end-to-end (→ requêtable) | + commit Snowpipe Streaming ~5-10 s → **≪ SLO 15 s** |
+| Débit | **~260 trades/s** (≈ 79 000 / 5 min) |
+| Modèles dbt | staging (vues) → intermediate (tables) → marts (vues live + Dynamic Tables) |
+| Tests dbt | **100 % verts** (not_null / unique / accepted_values) |
+| Couche de modélisation | **générée par l'agent Cortex Code** (`$flatten-variant`, `$realtime-marts`) |
+
+Requêtes de monitoring : `snowflake/02_observability.sql` (latence, fraîcheur, débit, lag des Dynamic Tables, taux de dédup, coût).
+
+## Production & exploitation
+
+- **Monitoring automatisé** (`snowflake/03_alerts.sql`) : Alert de fraîcheur (déclenchée si > 120 s sans données) + Task de tests dbt horaires, dans le schéma `ANALYTICS.MONITORING`. Option notification e-mail incluse.
+- **Rafraîchissement continu** : assuré par **Snowpipe Streaming** (ingestion) + **Dynamic Tables** (`target_lag='1 minute'`) — pas de cron dans le chemin critique.
+- **Hébergement 24/7 du consumer** : conteneur Docker (`ingestion/Dockerfile`) sur une VM gratuite (Oracle Cloud Always Free / fly.io) :
+  ```bash
+  docker build -t crypto-ingest ./ingestion
+  docker run -d --restart=unless-stopped \
+    -e SYMBOLS="btcusdt,ethusdt,solusdt" -e DEPTH_SPEED=1000ms \
+    -v "$PWD/ingestion/profile.json:/app/profile.json:ro" \
+    -v "$PWD/ingestion/rsa_key.p8:/app/rsa_key.p8:ro" \
+    crypto-ingest
+  ```
+  `--restart=unless-stopped` relance automatiquement le consumer après un reboot ou un crash.
+- **Gouvernance** : rôle least-privilege, auth key-pair, revue humaine du code généré par l'agent, tests dbt comme filet de sécurité.
+- **Reproductibilité** : (re)générer les modèles → `$flatten-variant` / `$realtime-marts` dans Cortex Code ; (re)lancer le build → `EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';`.
+
 ## Coûts (FinOps)
 
 - Snowpipe Streaming serverless ; warehouse XS `AUTO_SUSPEND=60` ; Dynamic Tables légères.
