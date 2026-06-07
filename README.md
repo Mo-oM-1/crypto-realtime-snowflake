@@ -1,9 +1,9 @@
 <div align="center">
 
-# 📈 Real-Time Crypto Analytics
-### ❄️ Snowflake · 🛠️ dbt · 🤖 Cortex Code
+# Real-Time Crypto Analytics
+### Snowflake | dbt | Cortex Code
 
-**Pipeline crypto _100 % temps réel_ où un agent IA génère _et maintient_ la couche dbt — sous gouvernance humaine.**
+**Pipeline crypto _100 % temps réel_ où un agent IA génère _et maintient_ la couche dbt, sous gouvernance humaine.**
 
 ![Snowflake](https://img.shields.io/badge/Snowflake-29B5E8?style=for-the-badge&logo=snowflake&logoColor=white)
 ![dbt](https://img.shields.io/badge/dbt-FF694B?style=for-the-badge&logo=dbt&logoColor=white)
@@ -16,117 +16,117 @@
 
 ---
 
-> **En une phrase :** une plateforme d'_agentic data engineering_ de bout en bout — ingestion streaming sub-seconde, modélisation **générée par un agent** depuis du JSON imbriqué brut, **auto-réparation** du schéma, **tests qualité auto-générés**, le tout **mesuré (SLO)** et **encadré** (revue humaine, pas de pilote automatique).
+> **En une phrase :** une plateforme d'_agentic data engineering_ de bout en bout : ingestion streaming sub-seconde, modélisation **générée par un agent** depuis du JSON imbriqué brut, **auto-réparation** du schéma, **tests qualité auto-générés**, le tout **mesuré (SLO)** et **encadré** (revue humaine, pas de pilote automatique).
 
-## ✨ Highlights
+## Highlights
 
-- 🤖 **Agentic** — la couche dbt (flatten + marts) est **générée par Cortex Code**, pas écrite à la main.
-- 🩹 **Self-healing** — un agent détecte la dérive de schéma et **étend les modèles staging tout seul**.
-- ✅ **Qualité auto** — un agent génère des **tests métier** (invariants OHLC / order book) — il a même **trouvé un vrai bug**.
-- ⚡ **Vrai temps réel** — Snowpipe Streaming + vues calculées à la lecture : **latence p95 ~0,13 s**, **~900 trades/s**.
-- 🔭 **Production** — SLO mesurés, monitoring/alertes, **FinOps** (resource monitor), exploitation 24/7.
-- 🛡️ **Gouvernance** — détection automatisée → remédiation agentique **validée par un humain avant commit**.
+- **Agentic** : la couche dbt (flatten + marts) est **générée par Cortex Code**, pas écrite à la main.
+- **Self-healing** : un agent détecte la dérive de schéma et **étend les modèles staging tout seul**.
+- **Qualité auto** : un agent génère des **tests métier** (invariants OHLC / order book) ; il a même **trouvé un vrai bug**.
+- **Vrai temps réel** : Snowpipe Streaming + vues calculées à la lecture, **latence p95 ~0,13 s**, **~900 trades/s**.
+- **Production** : SLO mesurés, monitoring/alertes, **FinOps** (resource monitor), exploitation 24/7.
+- **Gouvernance** : détection automatisée, remédiation agentique **validée par un humain avant commit**.
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 flowchart TB
-    BWS["Binance WebSocket — @trade + @depth"]
+    BWS["Binance WebSocket - @trade + @depth"]
     BWS -->|"Snowpipe Streaming ~5-10s"| RAW
-    subgraph SF["Snowflake — dbt Projects on Snowflake"]
+    subgraph SF["Snowflake - dbt Projects on Snowflake"]
         direction TB
-        RAW["Bronze · RAW VARIANT<br/>raw_trades · raw_depth"]
-        STG["Silver · staging views<br/>stg_trades · stg_depth_levels"]
-        MARTS["Gold · marts<br/>live views + Dynamic Tables"]
+        RAW["Bronze - RAW VARIANT<br/>raw_trades / raw_depth"]
+        STG["Silver - staging views<br/>stg_trades / stg_depth_levels"]
+        MARTS["Gold - marts<br/>live views + Dynamic Tables"]
         RAW -->|"flatten-variant (agent)"| STG
         STG -->|"realtime-marts (agent)"| MARTS
     end
-    MARTS --> DASH["Streamlit · dashboard live"]
-    MARTS --> OBS["Observabilité / SLO"]
-    subgraph GOV["Détection auto to remédiation agentique (revue humaine)"]
+    MARTS --> DASH["Streamlit - dashboard live"]
+    MARTS --> OBS["Observabilite / SLO"]
+    subgraph GOV["Detection auto, remediation agentique (revue humaine)"]
         direction TB
-        DET["Tasks / Alerts planifiées<br/>drift · qualité · fraîcheur"]
+        DET["Tasks / Alerts planifiees<br/>drift / qualite / fraicheur"]
         REM["check-schema-drift<br/>generate-quality-tests"]
-        DET -->|"alerte → pipeline_log"| REM
+        DET -->|"alerte -> pipeline_log"| REM
     end
     RAW -.-> DET
     REM -.->|"fix (review)"| STG
 ```
 
-- **Source** : Binance WebSocket — `@trade` (transactions) + `@depth` (carnet d'ordres, JSON imbriqué).
-- **Ingestion** : **Snowpipe Streaming** (SDK Python) → tables Bronze en **VARIANT brut**.
-- **Modélisation** : **Cortex Code** génère staging → intermediate → marts (dbt Projects on Snowflake).
+- **Source** : Binance WebSocket, `@trade` (transactions) + `@depth` (carnet d'ordres, JSON imbriqué).
+- **Ingestion** : **Snowpipe Streaming** (SDK Python) -> tables Bronze en **VARIANT brut**.
+- **Modélisation** : **Cortex Code** génère staging -> intermediate -> marts (dbt Projects on Snowflake).
 - **Service** : vues **live** (temps réel) + **Dynamic Tables** (historique) + dashboard **Streamlit**.
 
 Plan détaillé : [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 
-## 🤖 Agents & orchestration
+## Agents & orchestration
 
-Un agent IA natif Snowflake — **Cortex Code (CoCo)** — via **3 skills spécialisés**. Principe :
+Un agent IA natif Snowflake, **Cortex Code (CoCo)**, via **3 skills spécialisés**. Principe :
 on **automatise la détection** (SQL planifié), la **remédiation reste agentique sous revue humaine**.
 
 | Skill | Rôle | Déclenchement |
 |---|---|---|
-| `flatten-variant` (+ `realtime-marts`) | 🏗️ **Build** — VARIANT → staging → marts (vues live + Dynamic Tables) | à la demande |
-| `check-schema-drift` | 🩹 **Maintain / self-heal** — détecte les clés/types non mappés, étend le staging (additif) | sur alerte de drift |
-| `generate-quality-tests` | ✅ **Quality** — profile les modèles, génère des tests métier (OHLC, order book, RSI) | à la demande / sur échec |
+| `flatten-variant` (+ `realtime-marts`) | **Build** : VARIANT -> staging -> marts (vues live + Dynamic Tables) | à la demande |
+| `check-schema-drift` | **Maintain / self-heal** : détecte les clés/types non mappés, étend le staging (additif) | sur alerte de drift |
+| `generate-quality-tests` | **Quality** : profile les modèles, génère des tests métier (OHLC, order book, RSI) | à la demande / sur échec |
 
-**Orchestration (détection auto → remédiation agentique) :**
+**Orchestration (détection auto -> remédiation agentique) :**
 
 | Boucle | Détection auto (Task / Alert) | Signal | Remédiation (agent, revue) |
 |---|---|---|---|
-| Schéma | `crypto_schema_drift_check` (quotidien) | `pipeline_log` · DRIFT | `check-schema-drift` |
-| Qualité | `crypto_dbt_test` (horaire) + `crypto_quality_check` | `pipeline_log` · TEST_FAILED | `generate-quality-tests` / fix |
-| Fraîcheur | `crypto_freshness_alert` (5 min) | `pipeline_log` · STALE | vérifier / relancer le consumer |
+| Schéma | `crypto_schema_drift_check` (quotidien) | `pipeline_log` (DRIFT) | `check-schema-drift` |
+| Qualité | `crypto_dbt_test` (horaire) + `crypto_quality_check` | `pipeline_log` (TEST_FAILED) | `generate-quality-tests` / fix |
+| Fraîcheur | `crypto_freshness_alert` (5 min) | `pipeline_log` (STALE) | vérifier / relancer le consumer |
 
-> 🛡️ **Gouvernance** : on ne « cron » pas l'agent. La détection est automatisée et **déclenche** une intervention agentique **validée par un humain avant commit** (anti « vibe coding »). Auto-réparation **assistée**, pas aveugle.
+> **Gouvernance** : on ne « cron » pas l'agent. La détection est automatisée et **déclenche** une intervention agentique **validée par un humain avant commit** (anti « vibe coding »). Auto-réparation **assistée**, pas aveugle.
 
-## 📊 Résultats & SLO
+## Résultats & SLO
 
-Mesuré en conditions réelles (BTC, ETH, SOL — consumer actif) :
+Mesuré en conditions réelles (BTC, ETH, SOL ; consumer actif) :
 
 | Métrique | Valeur |
 |---|---|
-| ⚡ Latence d'ingestion (event → réception), **p95** | **~0,13 s** (moy. ~0,10 s) |
-| 🛰️ Latence end-to-end (→ requêtable) | + commit Snowpipe ~5-10 s → **≪ SLO 15 s** |
-| 🚀 Débit | **~900 trades/s** (≈ 280 000 / 5 min) |
-| 🧱 Modèles dbt | staging → intermediate → marts (vues live + Dynamic Tables) |
-| ✅ Tests dbt | **100 % verts** (not_null, unique, accepted_values, invariants) |
-| 🤖 Couche de modélisation | **générée par l'agent Cortex Code** |
+| Latence d'ingestion (event -> réception), **p95** | **~0,13 s** (moy. ~0,10 s) |
+| Latence end-to-end (-> requêtable) | + commit Snowpipe ~5-10 s, bien sous le SLO de 15 s |
+| Débit | **~900 trades/s** (~280 000 / 5 min) |
+| Modèles dbt | staging -> intermediate -> marts (vues live + Dynamic Tables) |
+| Tests dbt | **100 % verts** (not_null, unique, accepted_values, invariants) |
+| Couche de modélisation | **générée par l'agent Cortex Code** |
 
 Requêtes de monitoring : [`snowflake/02_observability.sql`](./snowflake/02_observability.sql).
 
-## 🎬 Démo
+## Démo
 
-### 🩹 Self-healing — l'agent détecte une nouvelle clé et répare le staging
+### Self-healing : l'agent détecte une nouvelle clé et répare le staging
 
 | Détection | Auto-réparation |
 |---|---|
 | ![Dérive détectée](docs/screenshots/schema-drift-new-key-detected.png) | ![Rapport self-heal](docs/screenshots/schema-drift-selfheal-report.png) |
 
-L'agent repère `x_signal` (clé non mappée dans le VARIANT), l'ajoute au staging en **additif**, et rebuild en vert — le flatten se répare tout seul.
+L'agent repère `x_signal` (clé non mappée dans le VARIANT), l'ajoute au staging en **additif**, et rebuild en vert : le flatten se répare tout seul.
 
-### ✅ Qualité sous gouvernance — un test généré attrape un vrai bug
+### Qualité sous gouvernance : un test généré attrape un vrai bug
 
 | Diagnostic | Correction |
 |---|---|
 | ![Bug diagnostiqué](docs/screenshots/quality-test-bug-diagnosis.png) | ![Bug corrigé](docs/screenshots/quality-test-bug-fix.png) |
 
-Un test **auto-généré** détecte un carnet d'ordres croisé (`best_bid > best_ask`). L'agent diagnostique la cause racine, **signale pour revue humaine**, puis corrige → tests verts au niveau `error`.
+Un test **auto-généré** détecte un carnet d'ordres croisé (`best_bid > best_ask`). L'agent diagnostique la cause racine, **signale pour revue humaine**, puis corrige : tests verts au niveau `error`.
 
-### ⚡ Temps réel & SLO — latence d'ingestion mesurée
+### Temps réel & SLO : latence d'ingestion mesurée
 
 ![SLO de latence](docs/screenshots/latency-slo.png)
 
-Latence event Binance → réception : **moyenne ~0,10 s, p95 ~0,13 s** sur **~900 trades/s** (BTC / ETH / SOL) — très en dessous du SLO de 15 s.
+Latence event Binance -> réception : **moyenne ~0,10 s, p95 ~0,13 s** sur **~900 trades/s** (BTC / ETH / SOL), bien en dessous du SLO de 15 s.
 
-## 🚀 Quickstart
+## Quickstart
 
 ```bash
-# 1. Setup Snowflake (région AWS) — édite snowflake/00_setup.sql, exécute-le dans Snowsight
-#    (crée DB, rôle, warehouse, user de service SVC_CRYPTO, tables VARIANT, resource monitor)
+# 1. Setup Snowflake (region AWS) : edite snowflake/00_setup.sql, execute-le dans Snowsight
+#    (cree DB, role, warehouse, user de service SVC_CRYPTO, tables VARIANT, resource monitor)
 openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
-openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub   # clé publique -> ALTER USER SVC_CRYPTO ...
+openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub   # cle publique -> ALTER USER SVC_CRYPTO ...
 
 # 2. Lancer l'ingestion
 cd ingestion && python -m venv venv && source venv/bin/activate
@@ -135,33 +135,33 @@ cp profile.json.example profile.json                  # account / user / url + r
 export SYMBOLS="btcusdt,ethusdt,solusdt" DEPTH_LEVEL=20 DEPTH_SPEED=1000ms
 python stream_to_snowflake.py
 
-# 3. Générer les modèles (Cortex Code, Snowsight, rôle CRYPTO_PIPELINE_ROLE)
+# 3. Generer les modeles (Cortex Code, Snowsight, role CRYPTO_PIPELINE_ROLE)
 #    $flatten-variant   puis   $realtime-marts     (cf. runbook/cortex_code_prompts.md)
 
-# 4. Dashboard : déployer dashboard/streamlit_app.py en Streamlit in Snowflake
+# 4. Dashboard : deployer dashboard/streamlit_app.py en Streamlit in Snowflake
 ```
 
 <details>
-<summary>📁 <b>Structure du repo</b></summary>
+<summary><b>Structure du repo</b></summary>
 
 ```
 .
 ├── snowflake/
-│   ├── 00_setup.sql              # bases, rôle, warehouse, user de service, tables VARIANT, resource monitor
-│   ├── 02_observability.sql      # requêtes SLO (latence, fraîcheur, débit, lag, dédup, coût)
-│   ├── 03_alerts.sql             # monitoring : alerte fraîcheur + task tests dbt
-│   ├── 04_drift_detection.sql    # détection auto de dérive de schéma (task quotidienne)
-│   └── 05_quality_monitoring.sql # task : log des échecs de tests qualité
-├── ingestion/                    # consumer temps réel (ingestion brute, NE flatten pas)
-│   ├── stream_to_snowflake.py    #   Binance WS (2 flux) → Snowpipe Streaming → RAW VARIANT
-│   ├── requirements.txt · Dockerfile · profile.json.example
+│   ├── 00_setup.sql              # bases, role, warehouse, user de service, tables VARIANT, resource monitor
+│   ├── 02_observability.sql      # requetes SLO (latence, fraicheur, debit, lag, dedup, cout)
+│   ├── 03_alerts.sql             # monitoring : alerte fraicheur + task tests dbt
+│   ├── 04_drift_detection.sql    # detection auto de derive de schema (task quotidienne)
+│   └── 05_quality_monitoring.sql # task : log des echecs de tests qualite
+├── ingestion/                    # consumer temps reel (ingestion brute, NE flatten pas)
+│   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> Snowpipe Streaming -> RAW VARIANT
+│   ├── requirements.txt / Dockerfile / profile.json.example
 ├── .cortex/skills/               # skills Cortex Code
 │   ├── flatten-variant/          #   build
 │   ├── check-schema-drift/       #   self-healing
-│   └── generate-quality-tests/   #   qualité
-├── AGENTS.md                     # prompts réutilisables ($flatten-variant, $realtime-marts, ...)
+│   └── generate-quality-tests/   #   qualite
+├── AGENTS.md                     # prompts reutilisables ($flatten-variant, $realtime-marts, ...)
 ├── macros/                       # macros de flatten
-├── models/                       # VIDE au départ — GÉNÉRÉ par Cortex Code
+├── models/                       # VIDE au depart, GENERE par Cortex Code
 ├── seeds/dim_symbols.csv
 ├── dashboard/streamlit_app.py
 └── runbook/cortex_code_prompts.md
@@ -171,10 +171,10 @@ python stream_to_snowflake.py
 </details>
 
 <details>
-<summary>🔧 <b>Production & exploitation</b></summary>
+<summary><b>Production & exploitation</b></summary>
 
 - **Monitoring automatisé** (`03_alerts.sql`) : alerte de fraîcheur + tests dbt horaires (schéma `ANALYTICS.MONITORING`).
-- **Rafraîchissement continu** : Snowpipe Streaming + Dynamic Tables (`target_lag='1 minute'`) — pas de cron dans le chemin critique.
+- **Rafraîchissement continu** : Snowpipe Streaming + Dynamic Tables (`target_lag='1 minute'`), pas de cron dans le chemin critique.
 - **Hébergement 24/7** du consumer via Docker :
   ```bash
   docker build -t crypto-ingest ./ingestion
@@ -184,37 +184,37 @@ python stream_to_snowflake.py
     -v "$PWD/ingestion/rsa_key.p8:/app/rsa_key.p8:ro" \
     crypto-ingest
   ```
-- **Reproductibilité** : régénérer → `$flatten-variant` / `$realtime-marts` ; rebuild → `EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';`.
+- **Reproductibilité** : régénérer -> `$flatten-variant` / `$realtime-marts` ; rebuild -> `EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';`.
 </details>
 
 <details>
-<summary>💸 <b>FinOps — incident réel & résolution</b></summary>
+<summary><b>FinOps : incident réel & résolution</b></summary>
 
 **Symptôme.** `Warehouse 'WH_CRYPTO_XS' cannot be resumed because resource monitor 'RM_CRYPTO' has exceeded its quota`.
 
 **Cause racine.** Quota volontairement bas (1 crédit/jour) dépassé par l'**accumulation de réveils du warehouse** (facturés 60 s mini) : Dynamic Tables en `target_lag='1 minute'` (poste principal) + alerte 5 min + task horaire.
 
-**Détection.** Le **Resource Monitor a joué son rôle** : dépense plafonnée, warehouse suspendu *avant* tout dérapage.
+**Détection.** Le **Resource Monitor a joué son rôle** : dépense plafonnée, warehouse suspendu avant tout dérapage.
 
-**Résolution.** Quota relevé (`SET CREDIT_QUOTA = 10`) ; `target_lag` élargi (1 → 5 min) ; alerts/tasks suspendus hors démo ; vues live inchangées (coût uniquement à la lecture).
+**Résolution.** Quota relevé (`SET CREDIT_QUOTA = 10`) ; `target_lag` élargi (1 -> 5 min) ; alerts/tasks suspendus hors démo ; vues live inchangées (coût uniquement à la lecture).
 
-**Leçon.** En streaming, **le monitoring lui-même peut être le 1ᵉʳ poste de coût** — un garde-fou doit être couplé à des cadences raisonnées.
+**Leçon.** En streaming, **le monitoring lui-même peut être le 1er poste de coût** ; un garde-fou doit être couplé à des cadences raisonnées.
 </details>
 
 <details>
-<summary>🔐 <b>Sécurité</b></summary>
+<summary><b>Sécurité</b></summary>
 
 - Secrets (`profile.json`, `rsa_key.p8`) **jamais commités** (`.gitignore`).
 - Rôle least-privilege `CRYPTO_PIPELINE_ROLE` ; user de service `SVC_CRYPTO` (key-pair only) ; Cortex Code respecte le RBAC.
 - Revue humaine du code généré par l'agent.
 </details>
 
-## 📚 Références
+## Références
 
-- [Snowpipe Streaming — high-performance (SDK Python)](https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-overview)
-- [Cortex Code](https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code) · [dbt Projects on Snowflake](https://www.snowflake.com/en/blog/building-and-deploying-dbt-projects-on-snowflake-with-cortex-code/)
-- 🙏 Skill `flatten-variant` inspiré du repo [`FerAou/Snow_tips`](https://github.com/FerAou/Snow_tips) de Ferhat Aouaghzene.
+- [Snowpipe Streaming, high-performance (SDK Python)](https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-overview)
+- [Cortex Code](https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code) | [dbt Projects on Snowflake](https://www.snowflake.com/en/blog/building-and-deploying-dbt-projects-on-snowflake-with-cortex-code/)
+- Skill `flatten-variant` inspiré du repo [`FerAou/Snow_tips`](https://github.com/FerAou/Snow_tips) de Ferhat Aouaghzene.
 
 <div align="center">
-<sub>Agentic data engineering · Snowflake + dbt + Cortex Code · temps réel · sous gouvernance</sub>
+<sub>Agentic data engineering | Snowflake + dbt + Cortex Code | temps réel | sous gouvernance</sub>
 </div>
