@@ -29,30 +29,69 @@
 
 ## Architecture
 
+### Pipeline de données (medallion)
+
 ```mermaid
 flowchart TB
     BWS["Binance WebSocket<br/>@trade + @depth"]
-    BWS -->|"Snowpipe Streaming ~5-10s"| RAW
-
-    subgraph SF["Snowflake - dbt Projects on Snowflake"]
+    CONS["Consumer Python<br/>Snowpipe Streaming SDK"]
+    BWS --> CONS
+    subgraph SF["Snowflake (AWS) - dbt Projects on Snowflake"]
         direction TB
-        RAW["Bronze - RAW VARIANT<br/>raw_trades / raw_depth"]
-        STG["Silver - staging views<br/>stg_trades / stg_depth_levels"]
-        MARTS["Gold - marts<br/>live views + Dynamic Tables"]
-        RAW -->|"flatten-variant (agent)"| STG
-        STG -->|"realtime-marts (agent)"| MARTS
+        subgraph BRZ["Bronze - VARIANT brut"]
+            RAWT["raw_trades"]
+            RAWD["raw_depth"]
+        end
+        subgraph SLV["Silver - staging (vues)"]
+            STGT["stg_trades"]
+            STGD["stg_depth_levels"]
+        end
+        subgraph INT["Intermediate (tables)"]
+            INTT["int_trades_enriched"]
+            INTD["int_depth_levels"]
+        end
+        subgraph GLV["Gold live (vues, calcul a la lecture)"]
+            VOHLCV["vw_ohlcv_1min_live"]
+            VOB["vw_orderbook_metrics_live"]
+            VMM["vw_market_metrics_live"]
+        end
+        subgraph GHS["Gold historique (Dynamic Tables, lag 1 min)"]
+            FOHLCV["fct_ohlcv_1min"]
+            FOBS["fct_orderbook_snapshots"]
+            DIM["dim_symbols (seed)"]
+        end
     end
+    CONS -->|"Snowpipe Streaming ~5-10s"| BRZ
+    BRZ -->|"flatten-variant (Cortex Code)"| SLV
+    SLV --> INT
+    SLV -->|"realtime-marts (Cortex Code)"| GLV
+    SLV -->|"realtime-marts"| GHS
+    GLV --> DASH["Streamlit dashboard"]
+    GLV --> OBS["Observabilité / SLO"]
+```
 
-    MARTS --> DASH["Streamlit dashboard live"]
-    MARTS --> OBS["Observabilité / SLO"]
+### Gouvernance & orchestration
 
-    subgraph GOV["Gouvernance - détection auto + remédiation agentique (revue humaine)"]
-        direction LR
-        DET["Détection auto<br/>Tasks / Alerts<br/>drift / qualité / fraîcheur"] -->|"alerte -> pipeline_log"| REM["Remédiation (agent, revue)<br/>check-schema-drift<br/>generate-quality-tests"]
+```mermaid
+flowchart LR
+    PIPE["Pipeline Snowflake<br/>RAW -> staging -> marts"]
+    subgraph DET["Détection auto (planifiée)"]
+        direction TB
+        DRIFT["crypto_schema_drift_check<br/>Task - quotidien"]
+        DTEST["crypto_dbt_test<br/>Task - horaire"]
+        QCHK["crypto_quality_check<br/>Task - horaire"]
+        FRESH["crypto_freshness_alert<br/>Alert - 5 min"]
     end
-
-    SF -.->|"drift / échec"| GOV
-    GOV -.->|"corrige (revue)"| SF
+    LOG[("pipeline_log")]
+    REM["Agents remédiation (revue humaine)<br/>check-schema-drift<br/>generate-quality-tests"]
+    PIPE -->|"métriques & schéma"| DET
+    DRIFT --> LOG
+    DTEST --> LOG
+    QCHK --> LOG
+    FRESH --> LOG
+    LOG -->|"signal"| REM
+    REM -->|"corrige (revue)"| PIPE
+    RM["Resource Monitor (FinOps)"] -.->|"cap credits"| PIPE
 ```
 
 - **Source** : Binance WebSocket, `@trade` (transactions) + `@depth` (carnet d'ordres, JSON imbriqué).
