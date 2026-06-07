@@ -19,3 +19,6 @@ logs/
 
 # macOS
 .DS_Store
+
+# Snowsight / Workspace scratch (apps & worksheets auto-créés : Untitled, Untitled.sql, ...)
+Untitled*
