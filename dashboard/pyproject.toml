@@ -2,8 +2,8 @@
 name = "crypto-dashboard"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = [
-    "streamlit",
-    "snowflake-snowpark-python",
-    "altair",
-]
+# Pas de dépendances ici : streamlit, snowflake-snowpark-python et altair sont
+# déjà fournis par l'environnement Streamlit in Snowflake (canal Anaconda Snowflake).
+# Déclarer des packages ici force uv à les chercher sur pypi.org -> échec (pas d'accès Internet).
+# Pour un package HORS canal Snowflake, utilise le menu "Packages" de l'éditeur, ou active une EAI.
+dependencies = []
