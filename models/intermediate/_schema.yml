@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: int_trades_enriched
+    description: Trades enriched with trade_value and taker_side, sourced from stg_trades.
+    columns:
+      - name: trade_uid
+        tests:
+          - not_null
+          - unique
+      - name: symbol
+        tests: [not_null]
+      - name: trade_value
+        tests: [not_null]
+      - name: taker_side
+        tests:
+          - accepted_values:
+              values: ['buy', 'sell']
+
+  - name: int_depth_levels
+    description: Order-book levels enriched with notional, sourced from stg_depth_levels.
+    columns:
+      - name: symbol
+        tests: [not_null]
+      - name: side
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['bid', 'ask']
+      - name: level
+        tests: [not_null]
+      - name: notional
+        tests: [not_null]

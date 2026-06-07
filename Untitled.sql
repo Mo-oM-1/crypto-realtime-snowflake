@@ -1,0 +1,8 @@
+SELECT table_schema, table_name, column_name, data_type, numeric_precision, numeric_scale
+FROM ANALYTICS.INFORMATION_SCHEMA.COLUMNS
+WHERE column_name IN ('PRICE','QTY','QUANTITY','VWAP','NOTIONAL','TRADE_VALUE')
+ORDER BY table_schema, table_name, column_name;
+
+SELECT 'STG_TRADES' AS model, COUNT(*) AS row_count FROM ANALYTICS.PUBLIC_STAGING.STG_TRADES
+UNION ALL
+SELECT 'STG_DEPTH_LEVELS', COUNT(*) FROM ANALYTICS.PUBLIC_STAGING.STG_DEPTH_LEVELS;

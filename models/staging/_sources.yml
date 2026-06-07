@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: raw
+    database: RAW
+    schema: CRYPTO
+    description: Raw Binance combined-stream messages ingested via Snowpipe Streaming.
+    tables:
+      - name: raw_trades
+        description: One row per ingested trade message (full combined-stream payload in RECORD).
+      - name: raw_depth
+        description: One row per ingested order-book depth snapshot (full combined-stream payload in RECORD).
