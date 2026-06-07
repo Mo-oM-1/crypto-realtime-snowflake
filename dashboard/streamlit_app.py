@@ -55,10 +55,10 @@ with col2:
 
 st.subheader("Top movers (5 min)")
 movers = session.sql(f"""
-    SELECT symbol, price_change_pct_5m, is_volume_anomaly
+    SELECT symbol, price_change_pct_5min, is_volume_anomaly
     FROM {MARTS}.VW_MARKET_METRICS_LIVE
     QUALIFY ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY minute DESC) = 1
-    ORDER BY ABS(price_change_pct_5m) DESC
+    ORDER BY ABS(price_change_pct_5min) DESC
 """).to_pandas()
 st.dataframe(movers, use_container_width=True)
 
