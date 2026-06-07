@@ -1,0 +1,11 @@
+definition_version: 2
+entities:
+  crypto_dashboard:
+    type: streamlit
+    identifier: CRYPTO_DASHBOARD
+    title: Crypto Real-Time
+    main_file: streamlit_app.py
+    query_warehouse: WH_CRYPTO_XS
+    artifacts:
+      - streamlit_app.py
+      - pyproject.toml
