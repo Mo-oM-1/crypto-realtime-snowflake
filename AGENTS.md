@@ -27,7 +27,13 @@ The raw JSON is the full Binance combined-stream message, stored in the VARIANT 
   -> model stg_depth_levels (side in {'bid','ask'}, level = array index, keep INGEST_TIME and lastUpdateId).
 
 Generate staging (views), intermediate (tables) and marts (tables), with _sources.yml and
-_schema.yml (not_null + unique on keys). Then run dbt compile, dbt run, and dbt test.
+_schema.yml (not_null + unique on keys).
+
+Conventions: cast every price/quantity/volume field to NUMBER(38,8) (never FLOAT); use descriptive
+CTE names that don't clash with source column names (e.g. bid_levels / ask_levels) and qualify
+flatten inputs (LATERAL FLATTEN(input => source.bids)).
+
+Then run dbt compile, dbt run, and dbt test.
 ```
 
 ---

@@ -87,6 +87,8 @@ Use the existing project macros depending on the case:
 - Always keep the scalar columns in addition to flattened ones.
 - Explicitly cast types: `::STRING`, `::NUMBER`, `::DATE`, `::TIMESTAMP_NTZ`.
 - Convert Binance epoch-ms to timestamps with `TO_TIMESTAMP_NTZ(<ms>, 3)`.
+- **Financial precision**: cast every monetary or quantity field (price, quantity, volume, notional) to `NUMBER(38,8)` — never `FLOAT`.
+- **CTE naming**: use descriptive CTE names that do NOT clash with source column names (e.g. `bid_levels` / `ask_levels`, not `bids` / `asks`), and qualify flatten inputs: `LATERAL FLATTEN(input => source.bids)`.
 - For arrays, base `max_index` on the actual `MAX(ARRAY_SIZE(...))`.
 - Name aliases in UPPER_CASE separated by underscores.
 - `stg_trades` → one row per trade. `stg_depth_levels` → one row per (symbol, side, level).
