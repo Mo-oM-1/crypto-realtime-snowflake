@@ -1,154 +1,157 @@
-# Crypto Real-Time Analytics — Snowflake + dbt + Cortex Code
+<div align="center">
 
-Pipeline crypto **100 % temps réel** (latence ~5–15 s), *production-grade*, 100 % écosystème
-**Snowflake + dbt**, à **coût quasi nul**. La couche de transformation (flatten du JSON
-imbriqué → modèles dbt) est **générée par l'agent Cortex Code** (skill `$flatten-variant`),
-dans l'esprit de l'« agentic data engineering ».
+# 📈 Real-Time Crypto Analytics
+### ❄️ Snowflake · 🛠️ dbt · 🤖 Cortex Code
+
+**Pipeline crypto _100 % temps réel_ où un agent IA génère _et maintient_ la couche dbt — sous gouvernance humaine.**
+
+![Snowflake](https://img.shields.io/badge/Snowflake-29B5E8?style=for-the-badge&logo=snowflake&logoColor=white)
+![dbt](https://img.shields.io/badge/dbt-FF694B?style=for-the-badge&logo=dbt&logoColor=white)
+![Python](https://img.shields.io/badge/Python_3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Cortex Code](https://img.shields.io/badge/Cortex_Code-AI_Agent-6E56CF?style=for-the-badge)
+![Real-time](https://img.shields.io/badge/Real--time-Snowpipe_Streaming-1E90FF?style=for-the-badge)
+![Status](https://img.shields.io/badge/status-prod--ready-2ea44f?style=for-the-badge)
+
+</div>
+
+---
+
+> **En une phrase :** une plateforme d'_agentic data engineering_ de bout en bout — ingestion streaming sub-seconde, modélisation **générée par un agent** depuis du JSON imbriqué brut, **auto-réparation** du schéma, **tests qualité auto-générés**, le tout **mesuré (SLO)** et **encadré** (revue humaine, pas de pilote automatique).
+
+## ✨ Highlights
+
+- 🤖 **Agentic** — la couche dbt (flatten + marts) est **générée par Cortex Code**, pas écrite à la main.
+- 🩹 **Self-healing** — un agent détecte la dérive de schéma et **étend les modèles staging tout seul**.
+- ✅ **Qualité auto** — un agent génère des **tests métier** (invariants OHLC / order book) — il a même **trouvé un vrai bug**.
+- ⚡ **Vrai temps réel** — Snowpipe Streaming + vues calculées à la lecture : **latence p95 ~0,16 s**, **~260 trades/s**.
+- 🔭 **Production** — SLO mesurés, monitoring/alertes, **FinOps** (resource monitor), exploitation 24/7.
+- 🛡️ **Gouvernance** — détection automatisée → remédiation agentique **validée par un humain avant commit**.
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TB
+    BWS["Binance WebSocket — @trade + @depth"]
+    BWS -->|"Snowpipe Streaming ~5-10s"| RAW
+    subgraph SF["Snowflake — dbt Projects on Snowflake"]
+        direction TB
+        RAW["Bronze · RAW VARIANT<br/>raw_trades · raw_depth"]
+        STG["Silver · staging views<br/>stg_trades · stg_depth_levels"]
+        MARTS["Gold · marts<br/>live views + Dynamic Tables"]
+        RAW -->|"flatten-variant (agent)"| STG
+        STG -->|"realtime-marts (agent)"| MARTS
+    end
+    MARTS --> DASH["Streamlit · dashboard live"]
+    MARTS --> OBS["Observabilité / SLO"]
+    subgraph GOV["Détection auto to remédiation agentique (revue humaine)"]
+        direction TB
+        DET["Tasks / Alerts planifiées<br/>drift · qualité · fraîcheur"]
+        REM["check-schema-drift<br/>generate-quality-tests"]
+        DET -->|"alerte → pipeline_log"| REM
+    end
+    RAW -.-> DET
+    REM -.->|"fix (review)"| STG
+```
 
 - **Source** : Binance WebSocket — `@trade` (transactions) + `@depth` (carnet d'ordres, JSON imbriqué).
 - **Ingestion** : **Snowpipe Streaming** (SDK Python) → tables Bronze en **VARIANT brut**.
 - **Modélisation** : **Cortex Code** génère staging → intermediate → marts (dbt Projects on Snowflake).
-- **Service** : vues **live** (calcul à la lecture) pour le temps réel ; **Dynamic Tables** pour l'historique ; dashboard **Streamlit**.
+- **Service** : vues **live** (temps réel) + **Dynamic Tables** (historique) + dashboard **Streamlit**.
 
-Plan détaillé : voir [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
+Plan détaillé : [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 
-## Architecture
+## 🤖 Agents & orchestration
 
-```
-Binance WS (@trade + @depth)
-   │  Consumer Python — Snowpipe Streaming (open_channel / append_row, ~5-10s)
-   ▼
-RAW.CRYPTO.RAW_TRADES / RAW_DEPTH   (Bronze, VARIANT brut)
-   │  ⟵  Cortex Code (agent, build-time) : détecte VARIANT → LATERAL FLATTEN → génère dbt
-   ▼
-staging (vues, flatten) → intermediate (tables) → marts
-   ├─ LIVE : vw_ohlcv_1min_live, vw_orderbook_metrics_live, vw_market_metrics_live  (vues, temps réel)
-   └─ HISTO : fct_ohlcv_1min, fct_orderbook_snapshots  (Dynamic Tables, lag 1 min)
-   ▼
-Streamlit (auto-refresh) · Observabilité / SLO
-```
-
-## Agents & orchestration
-
-Cœur du projet : la couche de transformation **et sa maintenance** sont prises en charge par un
-agent IA natif Snowflake — **Cortex Code (CoCo)** — via **3 skills spécialisés**. Principe :
-on **automatise la détection** (SQL planifié), la **remédiation reste agentique sous revue humaine**
-(pas de pilote automatique).
-
-**Les 3 skills (rôles) :**
+Un agent IA natif Snowflake — **Cortex Code (CoCo)** — via **3 skills spécialisés**. Principe :
+on **automatise la détection** (SQL planifié), la **remédiation reste agentique sous revue humaine**.
 
 | Skill | Rôle | Déclenchement |
 |---|---|---|
-| `flatten-variant` (+ `realtime-marts`) | **Build** — flatten du VARIANT → staging → intermediate → marts (vues live + Dynamic Tables) | à la demande |
-| `check-schema-drift` | **Maintain / self-heal** — détecte les clés/types non mappés et étend le staging (additif) | sur alerte de drift |
-| `generate-quality-tests` | **Quality** — profile les modèles et génère des tests métier (invariants OHLC / order book, ranges, RSI) | à la demande / sur échec |
+| `flatten-variant` (+ `realtime-marts`) | 🏗️ **Build** — VARIANT → staging → marts (vues live + Dynamic Tables) | à la demande |
+| `check-schema-drift` | 🩹 **Maintain / self-heal** — détecte les clés/types non mappés, étend le staging (additif) | sur alerte de drift |
+| `generate-quality-tests` | ✅ **Quality** — profile les modèles, génère des tests métier (OHLC, order book, RSI) | à la demande / sur échec |
 
-**Orchestration automatique (détection SQL → remédiation agentique) :**
+**Orchestration (détection auto → remédiation agentique) :**
 
-| Boucle | Détection auto (Task / Alert) | Signal | Remédiation (agent, revue humaine) |
+| Boucle | Détection auto (Task / Alert) | Signal | Remédiation (agent, revue) |
 |---|---|---|---|
 | Schéma | `crypto_schema_drift_check` (quotidien) | `pipeline_log` · DRIFT | `check-schema-drift` |
 | Qualité | `crypto_dbt_test` (horaire) + `crypto_quality_check` | `pipeline_log` · TEST_FAILED | `generate-quality-tests` / fix |
 | Fraîcheur | `crypto_freshness_alert` (5 min) | `pipeline_log` · STALE | vérifier / relancer le consumer |
 
-```
-Ingestion (Snowpipe Streaming) → RAW (VARIANT)
-   │  [AGENT · build]  flatten-variant / realtime-marts
-   ▼  modèles dbt (staging → marts, vues live + Dynamic Tables) → dashboard
-   │
-   ▼  [DÉTECTION AUTO · SQL]  drift (quotidien) · tests (horaire) · fraîcheur → pipeline_log / alertes
-   │  signal
-   ▼  [AGENT · maintain, sous revue humaine]  check-schema-drift · generate-quality-tests
-```
+> 🛡️ **Gouvernance** : on ne « cron » pas l'agent. La détection est automatisée et **déclenche** une intervention agentique **validée par un humain avant commit** (anti « vibe coding »). Auto-réparation **assistée**, pas aveugle.
 
-**Gouvernance** : on ne « cron » pas l'agent. La détection est automatisée et **déclenche** une
-intervention agentique **validée par un humain avant commit** (anti « vibe coding ») — auto-réparation
-assistée, pas aveugle.
+## 📊 Résultats & SLO
 
-## Structure du repo
-
-```
-.
-├── snowflake/00_setup.sql            # bases, rôle, warehouse, tables VARIANT, key-pair, resource monitor
-├── ingestion/                        # consumer temps réel (NE flatten PAS — ingestion brute)
-│   ├── stream_to_snowflake.py        #   Binance WS (2 flux) → Snowpipe Streaming → RAW VARIANT
-│   ├── requirements.txt · Dockerfile · profile.json.example
-├── .cortex/skills/flatten-variant/SKILL.md   # skill Cortex Code (flatten VARIANT → dbt)
-├── AGENTS.md                         # prompts réutilisables : $flatten-variant, $realtime-marts
-├── macros/                           # macros de flatten réutilisées par l'agent
-├── dbt_project.yml · profiles.example.yml · packages.yml
-├── seeds/dim_symbols.csv
-├── models/                           # VIDE au départ — GÉNÉRÉ par Cortex Code (cf. models/README.md)
-├── dashboard/streamlit_app.py        # dashboard (à utiliser après génération des marts)
-└── runbook/cortex_code_prompts.md    # mode opératoire Cortex Code
-```
-
-> `models/` est volontairement vide : les modèles sont **produits par l'agent**, pas écrits à la main.
-
-## Pré-requis
-
-- Compte **Snowflake en région AWS** (SDK Python Snowpipe Streaming + Cortex Code = GA sur AWS). Le trial 30 j ($400) suffit.
-- Python 3.9+ ; (optionnel) Docker.
-- Auth **key-pair RSA** (le SDK streaming l'exige).
-
-## Quickstart
-
-### 1. Setup Snowflake
-Édite `snowflake/00_setup.sql` (remplace `<TON_USER>`) et exécute-le dans Snowsight. Le script
-crée notamment l'utilisateur de **service `SVC_CRYPTO`** (type `SERVICE`, clé RSA uniquement),
-utilisé par le consumer. Génère la clé et enregistre la clé publique sur ce user de service :
-```bash
-openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
-openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
-# ALTER USER SVC_CRYPTO SET RSA_PUBLIC_KEY='...';  (cf. 00_setup.sql)
-```
-
-### 2. Lancer l'ingestion
-```bash
-cd ingestion
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-cp profile.json.example profile.json   # renseigner account/user/url + rsa_key.p8
-export SYMBOLS="btcusdt,ethusdt,solusdt" DEPTH_LEVEL=20 DEPTH_SPEED=1000ms
-python stream_to_snowflake.py
-```
-Vérifie l'arrivée des données :
-```sql
-SELECT COUNT(*) FROM RAW.CRYPTO.RAW_TRADES;
-SELECT RECORD FROM RAW.CRYPTO.RAW_DEPTH LIMIT 1;
-```
-
-### 3. Générer les modèles avec Cortex Code
-Dans Cortex Code (Snowsight), rôle `CRYPTO_PIPELINE_ROLE` :
-```
-$flatten-variant      # staging/intermediate/marts + tests
-$realtime-marts       # vues live + Dynamic Tables
-```
-Puis `dbt seed` + `dbt build`. Détails : [`runbook/cortex_code_prompts.md`](./runbook/cortex_code_prompts.md).
-
-### 4. Dashboard
-Déploie `dashboard/streamlit_app.py` en **Streamlit in Snowflake** (warehouse `WH_CRYPTO_XS`).
-
-## Résultats & SLO
-
-Mesuré en conditions réelles (3 symboles : BTC, ETH, SOL, consumer actif) :
+Mesuré en conditions réelles (BTC, ETH, SOL — consumer actif) :
 
 | Métrique | Valeur |
 |---|---|
-| Latence d'ingestion (event Binance → réception), p95 | **~0,16 s** (moy. ~0,11 s) |
-| Latence end-to-end (→ requêtable) | + commit Snowpipe Streaming ~5-10 s → **≪ SLO 15 s** |
-| Débit | **~260 trades/s** (≈ 79 000 / 5 min) |
-| Modèles dbt | staging (vues) → intermediate (tables) → marts (vues live + Dynamic Tables) |
-| Tests dbt | **100 % verts** (not_null / unique / accepted_values) |
-| Couche de modélisation | **générée par l'agent Cortex Code** (`$flatten-variant`, `$realtime-marts`) |
+| ⚡ Latence d'ingestion (event → réception), **p95** | **~0,16 s** (moy. ~0,11 s) |
+| 🛰️ Latence end-to-end (→ requêtable) | + commit Snowpipe ~5-10 s → **≪ SLO 15 s** |
+| 🚀 Débit | **~260 trades/s** (≈ 79 000 / 5 min) |
+| 🧱 Modèles dbt | staging → intermediate → marts (vues live + Dynamic Tables) |
+| ✅ Tests dbt | **100 % verts** (not_null, unique, accepted_values, invariants) |
+| 🤖 Couche de modélisation | **générée par l'agent Cortex Code** |
 
-Requêtes de monitoring : `snowflake/02_observability.sql` (latence, fraîcheur, débit, lag des Dynamic Tables, taux de dédup, coût).
+Requêtes de monitoring : [`snowflake/02_observability.sql`](./snowflake/02_observability.sql).
 
-## Production & exploitation
+## 🚀 Quickstart
 
-- **Monitoring automatisé** (`snowflake/03_alerts.sql`) : Alert de fraîcheur (déclenchée si > 120 s sans données) + Task de tests dbt horaires, dans le schéma `ANALYTICS.MONITORING`. Option notification e-mail incluse.
-- **Rafraîchissement continu** : assuré par **Snowpipe Streaming** (ingestion) + **Dynamic Tables** (`target_lag='1 minute'`) — pas de cron dans le chemin critique.
-- **Hébergement 24/7 du consumer** : conteneur Docker (`ingestion/Dockerfile`) sur une VM gratuite (Oracle Cloud Always Free / fly.io) :
+```bash
+# 1. Setup Snowflake (région AWS) — édite snowflake/00_setup.sql, exécute-le dans Snowsight
+#    (crée DB, rôle, warehouse, user de service SVC_CRYPTO, tables VARIANT, resource monitor)
+openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
+openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub   # clé publique -> ALTER USER SVC_CRYPTO ...
+
+# 2. Lancer l'ingestion
+cd ingestion && python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+cp profile.json.example profile.json                  # account / user / url + rsa_key.p8
+export SYMBOLS="btcusdt,ethusdt,solusdt" DEPTH_LEVEL=20 DEPTH_SPEED=1000ms
+python stream_to_snowflake.py
+
+# 3. Générer les modèles (Cortex Code, Snowsight, rôle CRYPTO_PIPELINE_ROLE)
+#    $flatten-variant   puis   $realtime-marts     (cf. runbook/cortex_code_prompts.md)
+
+# 4. Dashboard : déployer dashboard/streamlit_app.py en Streamlit in Snowflake
+```
+
+<details>
+<summary>📁 <b>Structure du repo</b></summary>
+
+```
+.
+├── snowflake/
+│   ├── 00_setup.sql              # bases, rôle, warehouse, user de service, tables VARIANT, resource monitor
+│   ├── 02_observability.sql      # requêtes SLO (latence, fraîcheur, débit, lag, dédup, coût)
+│   ├── 03_alerts.sql             # monitoring : alerte fraîcheur + task tests dbt
+│   ├── 04_drift_detection.sql    # détection auto de dérive de schéma (task quotidienne)
+│   └── 05_quality_monitoring.sql # task : log des échecs de tests qualité
+├── ingestion/                    # consumer temps réel (ingestion brute, NE flatten pas)
+│   ├── stream_to_snowflake.py    #   Binance WS (2 flux) → Snowpipe Streaming → RAW VARIANT
+│   ├── requirements.txt · Dockerfile · profile.json.example
+├── .cortex/skills/               # skills Cortex Code
+│   ├── flatten-variant/          #   build
+│   ├── check-schema-drift/       #   self-healing
+│   └── generate-quality-tests/   #   qualité
+├── AGENTS.md                     # prompts réutilisables ($flatten-variant, $realtime-marts, ...)
+├── macros/                       # macros de flatten
+├── models/                       # VIDE au départ — GÉNÉRÉ par Cortex Code
+├── seeds/dim_symbols.csv
+├── dashboard/streamlit_app.py
+└── runbook/cortex_code_prompts.md
+```
+
+> `models/` est volontairement vide : les modèles sont **produits par l'agent**, pas écrits à la main.
+</details>
+
+<details>
+<summary>🔧 <b>Production & exploitation</b></summary>
+
+- **Monitoring automatisé** (`03_alerts.sql`) : alerte de fraîcheur + tests dbt horaires (schéma `ANALYTICS.MONITORING`).
+- **Rafraîchissement continu** : Snowpipe Streaming + Dynamic Tables (`target_lag='1 minute'`) — pas de cron dans le chemin critique.
+- **Hébergement 24/7** du consumer via Docker :
   ```bash
   docker build -t crypto-ingest ./ingestion
   docker run -d --restart=unless-stopped \
@@ -157,44 +160,37 @@ Requêtes de monitoring : `snowflake/02_observability.sql` (latence, fraîcheur,
     -v "$PWD/ingestion/rsa_key.p8:/app/rsa_key.p8:ro" \
     crypto-ingest
   ```
-  `--restart=unless-stopped` relance automatiquement le consumer après un reboot ou un crash.
-- **Gouvernance** : rôle least-privilege, auth key-pair, revue humaine du code généré par l'agent, tests dbt comme filet de sécurité.
-- **Reproductibilité** : (re)générer les modèles → `$flatten-variant` / `$realtime-marts` dans Cortex Code ; (re)lancer le build → `EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';`.
+- **Reproductibilité** : régénérer → `$flatten-variant` / `$realtime-marts` ; rebuild → `EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';`.
+</details>
 
-## Coûts (FinOps)
+<details>
+<summary>💸 <b>FinOps — incident réel & résolution</b></summary>
 
-- Snowpipe Streaming serverless ; warehouse XS `AUTO_SUSPEND=60` ; Dynamic Tables légères.
-- **Resource Monitor** (cap quotidien) configuré dans `00_setup.sql`.
-- Filtrer à 1–3 symboles et `DEPTH_SPEED=1000ms` pour limiter le volume.
-- Estimation : ~5–12 $/mois en continu ; ~0 $ en mode démo (ingestion arrêtée).
+**Symptôme.** `Warehouse 'WH_CRYPTO_XS' cannot be resumed because resource monitor 'RM_CRYPTO' has exceeded its quota`.
 
-### Incident FinOps réel — détection & résolution
+**Cause racine.** Quota volontairement bas (1 crédit/jour) dépassé par l'**accumulation de réveils du warehouse** (facturés 60 s mini) : Dynamic Tables en `target_lag='1 minute'` (poste principal) + alerte 5 min + task horaire.
 
-**Symptôme.** `Warehouse 'WH_CRYPTO_XS' cannot be resumed because resource monitor 'RM_CRYPTO' has exceeded its quota` — warehouse suspendu, pipeline bloqué.
+**Détection.** Le **Resource Monitor a joué son rôle** : dépense plafonnée, warehouse suspendu *avant* tout dérapage.
 
-**Cause racine.** Le quota volontairement bas (1 crédit/jour) a été dépassé par l'**accumulation de réveils du warehouse**, chacun facturé **60 s minimum** :
-- Dynamic Tables en `target_lag='1 minute'` → refresh ~toutes les minutes 24/7 (poste principal) ;
-- Alert de fraîcheur (5 min) + Task de tests dbt (horaire).
+**Résolution.** Quota relevé (`SET CREDIT_QUOTA = 10`) ; `target_lag` élargi (1 → 5 min) ; alerts/tasks suspendus hors démo ; vues live inchangées (coût uniquement à la lecture).
 
-**Détection.** Le **Resource Monitor a joué son rôle** : il a plafonné la dépense et suspendu le warehouse *avant* tout dérapage de coût.
+**Leçon.** En streaming, **le monitoring lui-même peut être le 1ᵉʳ poste de coût** — un garde-fou doit être couplé à des cadences raisonnées.
+</details>
 
-**Résolution.**
-- Quota relevé à un seuil de dev : `ALTER RESOURCE MONITOR RM_CRYPTO SET CREDIT_QUOTA = 10;`
-- `target_lag` des Dynamic Tables élargi (1 → 5 min) quand la fraîcheur fine n'est pas requise ;
-- Alerts/Tasks suspendus hors démo (`ALTER ALERT/TASK ... SUSPEND`) ;
-- Vues live inchangées (coût uniquement à la lecture).
+<details>
+<summary>🔐 <b>Sécurité</b></summary>
 
-**Leçon.** En streaming, **le monitoring lui-même peut être le premier poste de coût** (réveils fréquents × facturation 60 s mini). Un garde-fou (resource monitor) doit être couplé à des cadences de refresh/alerte raisonnées.
+- Secrets (`profile.json`, `rsa_key.p8`) **jamais commités** (`.gitignore`).
+- Rôle least-privilege `CRYPTO_PIPELINE_ROLE` ; user de service `SVC_CRYPTO` (key-pair only) ; Cortex Code respecte le RBAC.
+- Revue humaine du code généré par l'agent.
+</details>
 
-## Sécurité
+## 📚 Références
 
-- Secrets (`profile.json`, `rsa_key.p8`) **jamais commités** (cf. `.gitignore`).
-- Rôle least-privilege `CRYPTO_PIPELINE_ROLE` ; Cortex Code respecte le RBAC.
-- Revue humaine du code généré par l'agent (gouvernance).
+- [Snowpipe Streaming — high-performance (SDK Python)](https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-overview)
+- [Cortex Code](https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code) · [dbt Projects on Snowflake](https://www.snowflake.com/en/blog/building-and-deploying-dbt-projects-on-snowflake-with-cortex-code/)
+- 🙏 Skill `flatten-variant` inspiré du repo [`FerAou/Snow_tips`](https://github.com/FerAou/Snow_tips) de Ferhat Aouaghzene.
 
-## Références
-
-- Snowpipe Streaming SDK Python : https://docs.snowflake.com/en/user-guide/snowpipe-streaming-high-performance-overview
-- Cortex Code : https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code
-- dbt Projects on Snowflake + Cortex Code : https://www.snowflake.com/en/blog/building-and-deploying-dbt-projects-on-snowflake-with-cortex-code/
-- Inspiration : repo `FerAou/Snow_tips/json_to_dbt` (skill `flatten-variant`).
+<div align="center">
+<sub>Agentic data engineering · Snowflake + dbt + Cortex Code · temps réel · sous gouvernance</sub>
+</div>
