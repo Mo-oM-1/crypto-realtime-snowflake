@@ -131,6 +131,24 @@ Requêtes de monitoring : `snowflake/02_observability.sql` (latence, fraîcheur,
 - Filtrer à 1–3 symboles et `DEPTH_SPEED=1000ms` pour limiter le volume.
 - Estimation : ~5–12 $/mois en continu ; ~0 $ en mode démo (ingestion arrêtée).
 
+### Incident FinOps réel — détection & résolution
+
+**Symptôme.** `Warehouse 'WH_CRYPTO_XS' cannot be resumed because resource monitor 'RM_CRYPTO' has exceeded its quota` — warehouse suspendu, pipeline bloqué.
+
+**Cause racine.** Le quota volontairement bas (1 crédit/jour) a été dépassé par l'**accumulation de réveils du warehouse**, chacun facturé **60 s minimum** :
+- Dynamic Tables en `target_lag='1 minute'` → refresh ~toutes les minutes 24/7 (poste principal) ;
+- Alert de fraîcheur (5 min) + Task de tests dbt (horaire).
+
+**Détection.** Le **Resource Monitor a joué son rôle** : il a plafonné la dépense et suspendu le warehouse *avant* tout dérapage de coût.
+
+**Résolution.**
+- Quota relevé à un seuil de dev : `ALTER RESOURCE MONITOR RM_CRYPTO SET CREDIT_QUOTA = 10;`
+- `target_lag` des Dynamic Tables élargi (1 → 5 min) quand la fraîcheur fine n'est pas requise ;
+- Alerts/Tasks suspendus hors démo (`ALTER ALERT/TASK ... SUSPEND`) ;
+- Vues live inchangées (coût uniquement à la lecture).
+
+**Leçon.** En streaming, **le monitoring lui-même peut être le premier poste de coût** (réveils fréquents × facturation 60 s mini). Un garde-fou (resource monitor) doit être couplé à des cadences de refresh/alerte raisonnées.
+
 ## Sécurité
 
 - Secrets (`profile.json`, `rsa_key.p8`) **jamais commités** (cf. `.gitignore`).
