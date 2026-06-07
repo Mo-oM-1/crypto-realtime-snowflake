@@ -14,8 +14,14 @@ models:
         tests: [not_null]
       - name: price
         tests: [not_null]
+      - name: quantity
+        tests: [not_null]
       - name: traded_at
         tests: [not_null]
+      - name: taker_side
+        tests:
+          - accepted_values:
+              values: ['buy', 'sell']
 
   - name: fct_depth_snapshots
     description: Fact table, one row per (symbol, side, level) order-book level per snapshot.
