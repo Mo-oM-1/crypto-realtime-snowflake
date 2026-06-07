@@ -96,6 +96,24 @@ Mesuré en conditions réelles (BTC, ETH, SOL — consumer actif) :
 
 Requêtes de monitoring : [`snowflake/02_observability.sql`](./snowflake/02_observability.sql).
 
+## 🎬 Démo
+
+### 🩹 Self-healing — l'agent détecte une nouvelle clé et répare le staging
+
+| Détection | Auto-réparation |
+|---|---|
+| ![Dérive détectée](docs/screenshots/schema-drift-new-key-detected.png) | ![Rapport self-heal](docs/screenshots/schema-drift-selfheal-report.png) |
+
+L'agent repère `x_signal` (clé non mappée dans le VARIANT), l'ajoute au staging en **additif**, et rebuild en vert — le flatten se répare tout seul.
+
+### ✅ Qualité sous gouvernance — un test généré attrape un vrai bug
+
+| Diagnostic | Correction |
+|---|---|
+| ![Bug diagnostiqué](docs/screenshots/quality-test-bug-diagnosis.png) | ![Bug corrigé](docs/screenshots/quality-test-bug-fix.png) |
+
+Un test **auto-généré** détecte un carnet d'ordres croisé (`best_bid > best_ask`). L'agent diagnostique la cause racine, **signale pour revue humaine**, puis corrige → tests verts au niveau `error`.
+
 ## 🚀 Quickstart
 
 ```bash
