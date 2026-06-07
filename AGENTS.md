@@ -77,7 +77,9 @@ HISTORY as Dynamic Tables (each with
    {{ config(materialized='dynamic_table', target_lag='1 minute', snowflake_warehouse='WH_CRYPTO_XS', on_configuration_change='apply') }}):
 
 4. fct_ohlcv_1min — same OHLCV as #1 but full history (no time filter).
-5. fct_orderbook_snapshots — per symbol & ingest_time: best_bid, best_ask, mid, spread_bps, imbalance.
+5. fct_orderbook_snapshots — ONE ROW PER TRUE SNAPSHOT: group by (symbol, last_update_id), NOT by
+   ingest_time (multiple snapshots can share one ingest_time → mixed levels → crossed book). Keep
+   ingest_time = MAX(ingest_time) per group. Columns: best_bid, best_ask, mid, spread_bps, imbalance.
 
 6. dim_symbols — from the seed dim_symbols (ref('dim_symbols')).
 
