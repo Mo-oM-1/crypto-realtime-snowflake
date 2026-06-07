@@ -39,8 +39,10 @@ SELECT * FROM ANALYTICS.MONITORING.pipeline_log
 ORDER BY checked_at DESC LIMIT 20;
 
 -- Coût (crédits du warehouse sur 24 h)
+-- INFORMATION_SCHEMA doit être qualifié par une base (ici ANALYTICS).
+-- Si erreur de privilèges, lance ce bloc en ACCOUNTADMIN (ou ignore-le).
 SELECT DATE_TRUNC('hour', start_time) AS hour, ROUND(SUM(credits_used), 4) AS credits
-FROM TABLE(INFORMATION_SCHEMA.WAREHOUSE_METERING_HISTORY(
+FROM TABLE(ANALYTICS.INFORMATION_SCHEMA.WAREHOUSE_METERING_HISTORY(
         DATE_RANGE_START => DATEADD('day', -1, CURRENT_DATE()),
         WAREHOUSE_NAME   => 'WH_CRYPTO_XS'))
 GROUP BY 1 ORDER BY 1 DESC;
