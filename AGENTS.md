@@ -58,10 +58,11 @@ LIVE views (each with {{ config(materialized='view') }}), filtered to the last 1
    trade_count = COUNT(*),
    vwap = SUM(price*quantity) / NULLIF(SUM(quantity), 0).
 
-2. vw_orderbook_metrics_live — latest snapshot per symbol
-   (use QUALIFY ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY ingest_time DESC) = 1
-    on the snapshot grain, or aggregate the most recent ingest_time):
-   best_bid = MAX(price) FILTER side='bid', best_ask = MIN(price) FILTER side='ask',
+2. vw_orderbook_metrics_live — latest snapshot per symbol.
+   IMPORTANT: identify the latest snapshot with last_update_id (Binance monotonic sequence),
+   NOT ingest_time (ingest_time is batch-uniform here). Keep only rows of the max snapshot, e.g.
+   WHERE last_update_id = MAX(last_update_id) OVER (PARTITION BY symbol), then aggregate levels:
+   best_bid = MAX(price) where side='bid', best_ask = MIN(price) where side='ask',
    mid = (best_bid+best_ask)/2,
    spread_bps = (best_ask-best_bid)/mid*10000,
    bid_vol = SUM(qty where side='bid'), ask_vol = SUM(qty where side='ask'),

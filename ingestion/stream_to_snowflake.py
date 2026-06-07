@@ -24,6 +24,7 @@ import signal
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 
 import websocket  # paquet "websocket-client"
 from snowflake.ingest.streaming import StreamingIngestClient
@@ -72,8 +73,14 @@ class TableChannel:
         with self._lock:
             self.offset += 1
             token = str(self.offset)
-        # RECORD = colonne VARIANT -> on passe un dict Python (MATCH_BY_COLUMN_NAME)
-        self.channel.append_row({"RECORD": record}, token)
+        # RECORD = colonne VARIANT (dict Python). INGEST_TIME estampillé côté client, PAR LIGNE :
+        # le DEFAULT CURRENT_TIMESTAMP() de la table s'évalue par batch -> valeur uniforme,
+        # inutilisable pour mesurer la latence. On envoie donc l'heure de réception ici.
+        self.channel.append_row(
+            {"RECORD": record,
+             "INGEST_TIME": datetime.now(timezone.utc).replace(tzinfo=None)},
+            token,
+        )
 
     def status(self):
         return self.channel.get_channel_status()
