@@ -33,3 +33,43 @@ models:
         tests: [not_null]
       - name: qty
         tests: [not_null]
+
+  - name: vw_ohlcv_1min_live
+    description: LIVE view, 1-minute OHLCV per symbol over the last 120 minutes.
+    columns:
+      - name: symbol
+        tests: [not_null]
+      - name: minute
+        tests: [not_null]
+
+  - name: vw_orderbook_metrics_live
+    description: LIVE view, latest order-book snapshot metrics per symbol (selected via last_update_id).
+    columns:
+      - name: symbol
+        tests:
+          - not_null
+          - unique
+
+  - name: vw_market_metrics_live
+    description: LIVE view, derived market metrics (price change %, volume z-score, realized vol, RSI-14) per symbol & minute.
+    columns:
+      - name: symbol
+        tests: [not_null]
+      - name: minute
+        tests: [not_null]
+
+  - name: fct_ohlcv_1min
+    description: Dynamic Table, full-history 1-minute OHLCV per symbol (target_lag 1 minute).
+    columns:
+      - name: symbol
+        tests: [not_null]
+      - name: minute
+        tests: [not_null]
+
+  - name: fct_orderbook_snapshots
+    description: Dynamic Table, order-book metrics per symbol & ingest_time (full history, target_lag 1 minute).
+    columns:
+      - name: symbol
+        tests: [not_null]
+      - name: ingest_time
+        tests: [not_null]
