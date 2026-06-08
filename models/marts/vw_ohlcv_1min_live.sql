@@ -9,7 +9,10 @@ with trades as (
         price,
         quantity
     from {{ ref('stg_trades') }}
-    where traded_at >= dateadd('minute', -120, current_timestamp())
+    -- Fenêtre sur traded_at = EVENT-TIME (horodatage du trade côté Binance).
+    -- sysdate() renvoie l'heure UTC en TIMESTAMP_NTZ, cohérent avec traded_at (NTZ UTC) ;
+    -- current_timestamp() est LTZ et décalerait la fenêtre selon le fuseau de la session.
+    where traded_at >= dateadd('minute', -120, sysdate())
 
 )
 

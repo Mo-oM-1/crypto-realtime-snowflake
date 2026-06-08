@@ -97,7 +97,10 @@ flowchart LR
 - **Source** : Binance WebSocket, `@trade` (transactions) + `@depth` (carnet d'ordres, JSON imbriqué).
 - **Ingestion** : **Snowpipe Streaming** (SDK Python) -> tables Bronze en **VARIANT brut**.
 - **Modélisation** : **Cortex Code** génère staging -> intermediate -> marts (dbt Projects on Snowflake).
-- **Service** : vues **live** (temps réel) + **Dynamic Tables** (historique) + dashboard **Streamlit**.
+- **Service** : vues **live** (temps réel) + historique en **incrémental** (et 1 Dynamic Table) + dashboard **Streamlit**.
+- **Matérialisations** : staging & intermediate = **vues** (zéro stockage) ; faits append-only = **incremental** (merge) ; OHLCV historique = incremental (pas Dynamic Table, car `min_by`/`max_by` ne sont pas incrémentalement maintenables).
+
+**Sémantique temporelle (choix assumé).** Les fenêtres temps réel utilisent l'**event-time** (`traded_at`) pour les trades, et l'**ingest-time** (`ingest_time`) pour le carnet d'ordres — le partial book depth Binance n'a pas d'horodatage d'événement propre. Les filtres comparent à `sysdate()` (UTC, `TIMESTAMP_NTZ`) et non `current_timestamp()` (LTZ), pour ne pas décaler la fenêtre selon le fuseau de session.
 
 Plan détaillé : [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 
