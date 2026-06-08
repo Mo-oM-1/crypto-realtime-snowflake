@@ -1,6 +1,6 @@
 ---
 name: generate-quality-tests
-description: Profiles the dbt models and generates domain-aware data-quality tests (positivity, categoricals, temporal checks, cross-field invariants) in _schema.yml and singular tests in tests/, then runs dbt test.
+description: Owns data-quality assurance. Profiles the dbt models and generates domain-aware business-rule tests (positivity, categoricals, temporal, cross-field invariants) as singular tests, plus unit tests for complex transformation logic, with severity tiering and store_failures, then runs dbt test. Structural key tests + docs belong to the flatten-variant skill.
 tools:
 - snowflake_sql_execute
 - snowflake_object_search
@@ -11,6 +11,21 @@ tools:
 - Add or extend data-quality tests beyond not_null / unique.
 - Profile the data and derive range / invariant checks.
 - Keywords: data quality, tests, profiling, ranges, invariants, expectations.
+
+# Ownership (this skill owns ALL quality assurance)
+
+Single owner of **data-quality / business-rule tests**. The **structural** tests (`not_null` / `unique`
+on keys, `accepted_values` on enums) and the column **documentation** are owned by the `flatten-variant`
+build skill — **assume they already exist and do NOT re-add them** (no duplicate tests).
+
+This skill produces:
+- **business-rule tests** — ranges & cross-field invariants (singular tests in `tests/`) ;
+- **unit tests** (dbt 1.8 `unit_tests`) for complex transformation logic — RSI (Wilder), OHLCV open/close,
+  microprice — with mocked inputs and an expected output (catch logic bugs without live data). If the
+  runtime lacks `unit_tests` support, fall back to a seed-fixture logic test (mini input table + expected) ;
+- **severity tiering** — `error` for hard invariants (crossed book), `warn` for "investigate" signals
+  (e.g. volume-anomaly counts) ;
+- **`store_failures: true`** so failing rows are persisted to a table for triage.
 
 # Project Context
 
@@ -37,7 +52,7 @@ SELECT DISTINCT side FROM ANALYTICS.PUBLIC_STAGING.STG_DEPTH_LEVELS;
 
 Generate tests for the invariants below (adapt to actual column names found):
 
-**stg_trades / fct_trades** : `price > 0`, `quantity > 0`, `trade_id > 0`, `traded_at <= CURRENT_TIMESTAMP()` (no future), `is_buyer_market_maker` boolean.
+**stg_trades / fct_trades** : `price > 0`, `quantity > 0`, `trade_id > 0`, `traded_at <= SYSDATE()` (no future — SYSDATE() is UTC NTZ like traded_at ; `current_timestamp()` is LTZ and mis-compares), `is_buyer_market_maker` boolean.
 **stg_depth_levels** : `price > 0`, `qty >= 0`, `side IN ('bid','ask')`, `level >= 0`.
 **vw_ohlcv_1min_live / fct_ohlcv_1min** : `high >= low`, `high >= open`, `high >= close`, `low <= open`, `low <= close`, `volume >= 0`, `open/high/low/close > 0`, `vwap BETWEEN low AND high`.
 **vw_orderbook_metrics_live / fct_orderbook_snapshots** : `best_bid <= best_ask`, `spread_bps >= 0`, `imbalance BETWEEN 0 AND 1`, `mid BETWEEN best_bid AND best_ask`, `microprice BETWEEN best_bid AND best_ask`.

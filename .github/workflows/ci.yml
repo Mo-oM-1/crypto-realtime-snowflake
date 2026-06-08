@@ -1,0 +1,106 @@
+name: CI
+
+# Gouvernance "anti vibe-coding" : l'agent (Cortex Code + skills) ECRIT les modeles,
+# cette CI les VALIDE avant merge. Lint -> build+tests dans une base CI isolee.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'models/**'
+      - 'tests/**'
+      - 'seeds/**'
+      - 'macros/**'
+      - 'dbt_project.yml'
+      - 'profiles.yml'
+      - '.sqlfluff'
+      - '.github/workflows/ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'models/**'
+      - 'tests/**'
+      - 'seeds/**'
+      - 'macros/**'
+      - 'dbt_project.yml'
+      - 'profiles.yml'
+  workflow_dispatch:
+
+# Annule les runs obsoletes sur une meme reference (economie de credits)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1) LINT - rapide, sans secret (sqlfluff avec les builtins dbt en jinja)
+  lint:
+    name: Lint SQL (sqlfluff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install sqlfluff
+        run: pip install -r requirements-dev.txt
+      - name: sqlfluff lint
+        run: sqlfluff lint models/ tests/
+
+  # 2) BUILD + TESTS sur la base CI isolee (ANALYTICS_CI) - gate des Pull Requests
+  build-ci:
+    name: dbt build (ANALYTICS_CI)
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Snowflake CLI
+        uses: snowflakedb/snowflake-cli-action@v1.5
+        # cli-version non epingle = derniere version (les commandes `snow dbt` requierent >= 3.13.0)
+      - name: Deploy + build + test on ANALYTICS_CI
+        env:
+          SNOWFLAKE_AUTHENTICATOR: SNOWFLAKE_JWT
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_CI_USER }}
+          SNOWFLAKE_PRIVATE_KEY_RAW: ${{ secrets.SNOWFLAKE_CI_PRIVATE_KEY_RAW }}
+          SNOWFLAKE_ROLE: CRYPTO_CI_ROLE
+          SNOWFLAKE_WAREHOUSE: WH_CRYPTO_XS
+          SNOWFLAKE_DATABASE: ANALYTICS_CI
+          SNOWFLAKE_SCHEMA: PUBLIC
+        run: |
+          # -x : connexion temporaire construite a partir des variables d'environnement
+          snow dbt deploy crypto_realtime_ci --source . --profiles-dir . --default-target ci --force -x
+          # build = run + seed + test : un echec de test FAIL la PR.
+          # -x (option CLI) AVANT le nom : `snow dbt execute [options-cli] NAME [commande-dbt]`.
+          snow dbt execute -x crypto_realtime_ci build
+
+  # 3) DEPLOIEMENT PROD (ANALYTICS) - uniquement sur merge vers main
+  deploy-prod:
+    name: Deploy to prod (ANALYTICS)
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Configure des "required reviewers" sur cet environment pour une approbation manuelle du deploiement
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Snowflake CLI
+        uses: snowflakedb/snowflake-cli-action@v1.5
+      - name: Deploy + build on ANALYTICS
+        env:
+          SNOWFLAKE_AUTHENTICATOR: SNOWFLAKE_JWT
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_PROD_USER }}
+          SNOWFLAKE_PRIVATE_KEY_RAW: ${{ secrets.SNOWFLAKE_PROD_PRIVATE_KEY_RAW }}
+          SNOWFLAKE_ROLE: CRYPTO_PIPELINE_ROLE
+          SNOWFLAKE_WAREHOUSE: WH_CRYPTO_XS
+          SNOWFLAKE_DATABASE: ANALYTICS
+          SNOWFLAKE_SCHEMA: PUBLIC
+        run: |
+          snow dbt deploy crypto_realtime --source . --profiles-dir . --default-target prod --force -x
+          snow dbt execute -x crypto_realtime build

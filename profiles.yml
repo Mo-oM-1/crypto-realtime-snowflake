@@ -1,6 +1,11 @@
-# profiles.yml — pour dbt Projects on Snowflake (exécution dans une Workspace Snowsight).
-# account/user peuvent rester arbitraires : le projet tourne sous TON contexte Snowflake
-# (rôle/entrepôt ci-dessous). Aucun secret ici.
+# profiles.yml - pour dbt Projects on Snowflake (execution native dans Snowflake).
+# account/user peuvent rester arbitraires : le projet tourne sous le contexte Snowflake
+# (role/entrepot ci-dessous) ou, en CI, sous la connexion du Snowflake CLI. Aucun secret ici.
+#
+# Targets :
+#   dev  -> usage interactif (Workspace Snowsight), base de prod ANALYTICS
+#   prod -> deploiement de production (merge sur main)         -> ANALYTICS
+#   ci   -> validation des Pull Requests, base ISOLEE          -> ANALYTICS_CI
 crypto_realtime:
   target: dev
   outputs:
@@ -11,5 +16,25 @@ crypto_realtime:
       role: CRYPTO_PIPELINE_ROLE
       warehouse: WH_CRYPTO_XS
       database: ANALYTICS
-      schema: PUBLIC          # dbt créera PUBLIC_STAGING / PUBLIC_INTERMEDIATE / PUBLIC_MARTS
+      schema: PUBLIC          # dbt creera PUBLIC_STAGING / PUBLIC_INTERMEDIATE / PUBLIC_MARTS
+      threads: 8
+
+    prod:
+      type: snowflake
+      account: unused
+      user: unused
+      role: CRYPTO_PIPELINE_ROLE
+      warehouse: WH_CRYPTO_XS
+      database: ANALYTICS
+      schema: PUBLIC
+      threads: 8
+
+    ci:
+      type: snowflake
+      account: unused
+      user: unused
+      role: CRYPTO_CI_ROLE
+      warehouse: WH_CRYPTO_XS
+      database: ANALYTICS_CI   # base jetable, isolee de la prod (cf. snowflake/06_ci_setup.sql)
+      schema: PUBLIC
       threads: 8

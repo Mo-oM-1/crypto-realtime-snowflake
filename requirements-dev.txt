@@ -1,0 +1,7 @@
+# Outils de DEV / CI (PAS des dependances runtime du consumer : voir ingestion/requirements.txt).
+# Installes par le job `lint` de la CI et en local pour reproduire la CI a l'identique.
+sqlfluff==4.2.2
+
+# NB : le Snowflake CLI (`snow`) n'est volontairement PAS ici.
+#   - en CI  : fourni par l'action snowflakedb/snowflake-cli-action
+#   - en local : a installer comme outil global -> pipx install snowflake-cli
