@@ -73,8 +73,9 @@ jobs:
         run: |
           # -x : connexion temporaire construite a partir des variables d'environnement
           snow dbt deploy crypto_realtime_ci --source . --profiles-dir . --default-target ci --force -x
-          # build = run + seed + test : un echec de test FAIL la PR
-          snow dbt execute crypto_realtime_ci build -x
+          # build = run + seed + test : un echec de test FAIL la PR.
+          # -x (option CLI) AVANT le nom : `snow dbt execute [options-cli] NAME [commande-dbt]`.
+          snow dbt execute -x crypto_realtime_ci build
 
   # 3) DEPLOIEMENT PROD (ANALYTICS) - uniquement sur merge vers main
   deploy-prod:
@@ -102,4 +103,4 @@ jobs:
           SNOWFLAKE_SCHEMA: PUBLIC
         run: |
           snow dbt deploy crypto_realtime --source . --profiles-dir . --default-target prod --force -x
-          snow dbt execute crypto_realtime build -x
+          snow dbt execute -x crypto_realtime build
