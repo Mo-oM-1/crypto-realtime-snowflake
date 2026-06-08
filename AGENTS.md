@@ -26,7 +26,9 @@ The raw JSON is the full Binance combined-stream message, stored in the VARIANT 
   Use LATERAL FLATTEN to explode bids/asks into one row per (symbol, side, level, price, qty)
   -> model stg_depth_levels (side in {'bid','ask'}, level = array index, keep INGEST_TIME and lastUpdateId).
 
-Generate staging (views), intermediate (tables) and marts (tables), with _sources.yml and
+Generate staging (views), intermediate (VIEWS, zero storage), and marts: dimensions as tables,
+append-only facts as INCREMENTAL (merge on the natural key - e.g. trade_uid for trades,
+(symbol,last_update_id,side,level) for depth - with a lookback filter on ingest_time). With _sources.yml and
 _schema.yml (not_null + unique on keys).
 
 Conventions: cast every price/quantity/volume field to NUMBER(38,8) (never FLOAT); use descriptive

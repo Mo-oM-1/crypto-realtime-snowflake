@@ -33,7 +33,7 @@ The RAW tables are fed by **Snowpipe Streaming** with the **raw Binance combined
 Automatically detects VARIANT columns, analyzes their JSON structure, and generates a 3-layer dbt project:
 
 - **Staging**: flatten VARIANT columns with inline `LATERAL FLATTEN` / dot-notation, sourced directly from RAW tables (`{{ source() }}`), materialized as **views**.
-- **Intermediate**: enrichment and joins between staging models (`{{ ref('stg_...') }}`), materialized as **tables**.
+- **Intermediate**: enrichment and joins between staging models (`{{ ref('stg_...') }}`), materialized as **views** (zero storage, inspectable).
 - **Marts**: dimensions and facts (`{{ ref('int_...') }}`), ready for consumption.
 
 # Instructions
