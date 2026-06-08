@@ -71,7 +71,8 @@ LIVE views (each with {{ config(materialized='view') }}), filtered to the last 1
 
 3. vw_market_metrics_live — from vw_ohlcv_1min_live:
    price change % over 1/5/15 min, volume z-score over a rolling window (flag is_volume_anomaly when |z|>3),
-   realized volatility (stddev of log returns), rsi_14.
+   realized volatility (stddev of log returns), and rsi_14 using WILDER smoothing (alpha = 1/14, recursive
+   CTE - like TradingView/ta.rma), NOT a simple moving average of gains/losses.
 
 HISTORY as Dynamic Tables (each with
    {{ config(materialized='dynamic_table', target_lag='1 minute', snowflake_warehouse='WH_CRYPTO_XS', on_configuration_change='apply') }}):
