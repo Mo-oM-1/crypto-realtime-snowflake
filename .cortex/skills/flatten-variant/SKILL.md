@@ -106,15 +106,24 @@ sources (RAW tables) → staging → intermediate → marts
 
 ## Step 4: Generate intermediate models
 
-Enrich staging via joins/aggregations, sourced exclusively from staging models. Materialized as tables.
+Enrich staging via joins/aggregations, sourced exclusively from staging models. Materialized as views.
 
 ## Step 5: Generate marts models
 
 Dimensions (`dim_`) and facts (`fct_`), sourced exclusively from intermediate models.
 
-## Step 6: Add _sources.yml and _schema.yml
+## Step 6: Add _sources.yml and _schema.yml (doc + STRUCTURAL tests only)
 
-Each layer gets a `_schema.yml` with `not_null` and `unique` tests on key columns. `_sources.yml` declares the RAW source:
+This skill owns the **structure + documentation**, NOT the business rules:
+- `description:` on every model and key column (documentation, surfaced by `dbt docs`).
+- `not_null` / `unique` on **keys** (primary / surrogate), `accepted_values` on obvious enums (e.g. `side`).
+- Optionally **model contracts** (`config: contract: {enforced: true}` + column `data_type`) on the marts,
+  to fail the build on output-schema drift.
+
+Do NOT add business-rule tests here (ranges, cross-field invariants, RSI, transformation logic) — those
+are owned by the `generate-quality-tests` skill. This avoids duplicate tests.
+
+`_sources.yml` declares the RAW source:
 
 ```yaml
 version: 2

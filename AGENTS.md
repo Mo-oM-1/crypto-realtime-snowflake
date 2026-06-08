@@ -29,7 +29,9 @@ The raw JSON is the full Binance combined-stream message, stored in the VARIANT 
 Generate staging (views), intermediate (VIEWS, zero storage), and marts: dimensions as tables,
 append-only facts as INCREMENTAL (merge on the natural key - e.g. trade_uid for trades,
 (symbol,last_update_id,side,level) for depth - with a lookback filter on ingest_time). With _sources.yml and
-_schema.yml (not_null + unique on keys).
+_schema.yml. Tests here are STRUCTURAL only: not_null + unique on keys, accepted_values on enums (side),
+plus column descriptions (doc). Do NOT add business-rule / range tests here - those are owned by the
+$generate-quality-tests skill (no duplicates).
 
 Conventions: cast every price/quantity/volume field to NUMBER(38,8) (never FLOAT); use descriptive
 CTE names that don't clash with source column names (e.g. bid_levels / ask_levels) and qualify
@@ -126,14 +128,21 @@ invariants croisés). Voir `.cortex/skills/generate-quality-tests/SKILL.md`.
 **Prompt :**
 
 ```
-Profile the dbt models in ANALYTICS.PUBLIC_STAGING / PUBLIC_INTERMEDIATE / PUBLIC_MARTS and generate
-domain-aware data-quality tests. No dbt_utils/dbt_expectations available, so use built-in column tests
-(not_null, accepted_values) in _schema.yml plus SINGULAR tests in tests/ for ranges and cross-field
-invariants. Cover at least: price/quantity > 0; side in ('bid','ask'); OHLC invariants
-(high >= low/open/close, low <= open/close, vwap between low and high); order-book invariants
-(best_bid <= best_ask, spread_bps >= 0, imbalance between 0 and 1, microprice between best_bid and
-best_ask); rsi_14 between 0 and 100; no future traded_at. Name singular tests assert_<model>_<rule>.sql.
-Then run dbt test and report. If a test fails on real data, flag it as a genuine data issue.
+This skill OWNS all data-quality assurance. The structural tests (not_null/unique on keys,
+accepted_values on enums) and the column docs already exist - they are owned by $flatten-variant, so
+do NOT re-add them (no duplicates). Profile the dbt models in ANALYTICS.PUBLIC_STAGING /
+PUBLIC_INTERMEDIATE / PUBLIC_MARTS and generate domain-aware BUSINESS-RULE tests. No
+dbt_utils/dbt_expectations available, so use SINGULAR tests in tests/ for ranges and cross-field
+invariants. Cover at least: price/quantity > 0; OHLC invariants (high >= low/open/close,
+low <= open/close, vwap between low and high); order-book invariants (best_bid <= best_ask,
+spread_bps >= 0, imbalance between 0 and 1, microprice between best_bid and best_ask); rsi_14
+between 0 and 100; no future traded_at (compare to SYSDATE(), UTC NTZ). Name singular tests
+assert_<model>_<rule>.sql. Apply severity tiering (error for hard invariants like a crossed book,
+warn for investigate signals like volume-anomaly counts) and store_failures: true so violating rows
+are persisted for triage. Additionally, add unit tests (dbt 1.8 unit_tests) for complex transformation
+logic - RSI Wilder and OHLCV open/close - with mocked inputs and an expected output; if the runtime
+lacks unit_tests support, fall back to a seed-fixture logic test. Then run dbt test and report. If a
+test fails on real data, flag it as a genuine data issue.
 ```
 
 ---
@@ -141,6 +150,7 @@ Then run dbt test and report. If a test fails on real data, flag it as a genuine
 ### Règles de gouvernance (anti « vibe coding »)
 
 - **Revue humaine** systématique du SQL généré (diff Git) avant merge.
+- **Frontière de tests** : `$flatten-variant` = structure (clés + doc + contrats) ; `$generate-quality-tests` = métier (ranges, invariants croisés, unit tests). Aucun doublon.
 - Les **tests dbt** (not_null/unique) servent de filet — `dbt test` doit être vert.
 - Modèles **idempotents** ; respect du RBAC via le rôle `CRYPTO_PIPELINE_ROLE`.
 - Respecter la chaîne `sources → staging → intermediate → marts`.

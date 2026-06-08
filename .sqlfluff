@@ -1,0 +1,38 @@
+[sqlfluff]
+templater = jinja
+dialect = snowflake
+max_line_length = 140
+# On garde les regles de FOND (casse coherente, references, proprete) et on desactive
+# les regles de MISE EN FORME / structure opiniatres qui entrent en conflit avec le
+# style assume des modeles generes par l'agent :
+#   references.keywords          -> open/close/high/low comme noms de colonnes (OHLCV)
+#   layout.spacing               -> alignement vertical des alias et NUMBER(38,8)
+#   layout.indent                -> indentation des CTE
+#   layout.select_targets        -> cibles de select sur une ligne (vues live compactes)
+#   structure.column_order       -> ordre des colonnes (choix metier)
+#   structure.join_condition_order / ambiguous.join -> style des jointures du CTE recursif RSI
+#   structure.simple_case        -> CASE multi-branches (RSI) faussement signale
+#   aliasing.table               -> alias implicites (LATERAL FLATTEN / refs)
+exclude_rules = references.keywords, layout.spacing, layout.indent, layout.select_targets, structure.column_order, structure.join_condition_order, ambiguous.join, structure.simple_case, aliasing.table
+# references.qualification : self-reference {{ this }} des modeles incrementaux ->
+# faux positif au lint (pas de contexte dbt). On la garde VISIBLE mais NON bloquante.
+warnings = references.qualification
+
+[sqlfluff:templater:jinja]
+# Fournit ref/source/config/var/is_incremental/this : on lint sans connexion Snowflake.
+# is_incremental() = False -> le filtre incremental n'est pas rendu au lint
+# (sa logique est validee par `dbt build` dans Snowflake, cote CI).
+apply_dbt_builtins = true
+
+# Conventions du repo : mots-cles / fonctions / identifiants / litteraux en minuscules.
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = lower

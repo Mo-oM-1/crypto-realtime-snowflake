@@ -192,6 +192,26 @@ python stream_to_snowflake.py
 ```
 
 <details>
+<summary><b>Variables d'environnement (consumer)</b></summary>
+
+Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se touchent que sous forte charge.
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `SYMBOLS` | `btcusdt,ethusdt,solusdt` | Paires Binance à suivre (séparées par des virgules) |
+| `DEPTH_LEVEL` | `20` | Niveaux du carnet d'ordres (5 / 10 / 20) |
+| `DEPTH_SPEED` | `1000ms` | Cadence du flux depth (1000ms = moins de volume = moins cher) |
+| `QUEUE_MAXSIZE` | `100000` | Taille de la file de découplage WS -> writer ; au-delà, perte explicite comptée (`dropped`) |
+| `BATCH_MAX_ROWS` | `5000` | Lignes max coalescées par micro-batch du writer |
+| `BATCH_MAX_SECONDS` | `1.0` | Borne temps d'un micro-batch (pas de latence ajoutée à faible charge) |
+| `SNOWFLAKE_DATABASE` | `RAW` | Base cible de l'ingestion brute |
+| `SNOWFLAKE_SCHEMA` | `CRYPTO` | Schéma cible |
+| `SNOWFLAKE_PROFILE_JSON` | `profile.json` | Chemin du profil key-pair (jamais commité) |
+
+> Architecture résiliente : le thread WebSocket ne fait aucune I/O Snowflake ; il pousse dans une `queue.Queue` bornée qu'un thread writer draine en micro-batch. La cadence de flush réseau vers Snowflake reste gouvernée par le SDK (`MAX_CLIENT_LAG`).
+</details>
+
+<details>
 <summary><b>Structure du repo</b></summary>
 
 ```
@@ -201,16 +221,22 @@ python stream_to_snowflake.py
 │   ├── 02_observability.sql      # requetes SLO (latence, fraicheur, debit, lag, dedup, cout)
 │   ├── 03_alerts.sql             # monitoring : alerte fraicheur + task tests dbt
 │   ├── 04_drift_detection.sql    # detection auto de derive de schema (task quotidienne)
-│   └── 05_quality_monitoring.sql # task : log des echecs de tests qualite
+│   ├── 05_quality_monitoring.sql # task : log des echecs de tests qualite
+│   └── 06_ci_setup.sql           # environnement CI isole (ANALYTICS_CI, role, user de service)
 ├── ingestion/                    # consumer temps reel (ingestion brute, NE flatten pas)
-│   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> Snowpipe Streaming -> RAW VARIANT
+│   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> file bornee -> Snowpipe Streaming -> RAW VARIANT
 │   ├── requirements.txt / Dockerfile / profile.json.example
 ├── .cortex/skills/               # skills Cortex Code
-│   ├── flatten-variant/          #   build
+│   ├── flatten-variant/          #   build (structure + doc + tests de cles)
 │   ├── check-schema-drift/       #   self-healing
-│   └── generate-quality-tests/   #   qualite
+│   └── generate-quality-tests/   #   qualite (tests metier + unit tests)
+├── .github/workflows/ci.yml      # CI/CD : lint + build/test (base CI isolee) -> deploy prod
+├── .sqlfluff                     # regles de lint SQL (conventions du repo)
+├── requirements-dev.txt          # outils dev/CI (sqlfluff) - distinct du runtime consumer
+├── profiles.yml                  # targets dbt : dev / prod / ci (sans secret)
 ├── AGENTS.md                     # prompts reutilisables ($flatten-variant, $realtime-marts, ...)
 ├── models/                       # GENERE par Cortex Code (flatten + marts)
+├── tests/                        # tests qualite (singular) - skill generate-quality-tests
 ├── seeds/dim_symbols.csv
 ├── dashboard/streamlit_app.py
 └── runbook/cortex_code_prompts.md
@@ -234,6 +260,29 @@ python stream_to_snowflake.py
     crypto-ingest
   ```
 - **Reproductibilité** : régénérer -> `$flatten-variant` / `$realtime-marts` ; rebuild -> `EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';`.
+</details>
+
+<details>
+<summary><b>CI/CD (GitHub Actions, tout-Snowflake)</b></summary>
+
+L'agent (Cortex Code + skills) **écrit** les modèles ; la CI les **valide** avant merge. C'est le garde-fou anti « vibe-coding » : le skill encode l'intention, la CI prouve qu'elle est respectée.
+
+- **Sur Pull Request** (`.github/workflows/ci.yml`) : `sqlfluff lint` (conventions du repo) puis `snow dbt deploy` + `snow dbt execute build` dans une **base CI isolée** (`ANALYTICS_CI`, rôle `CRYPTO_CI_ROLE`, lecture seule sur `RAW`). Un échec de test **bloque** la PR ; une PR ne peut jamais écrire en prod.
+- **Sur merge vers `main`** : déploiement prod (`snow dbt` natif), protégeable par un environment GitHub à reviewers obligatoires.
+- **Moteur** : 100 % natif via Snowflake CLI (`snow dbt`), aucun dbt Core à maintenir.
+- **Boucle agentique** : si la CI casse, on redonne l'erreur à Cortex Code (skills `check-schema-drift` / `generate-quality-tests`, qui buildent « jusqu'au vert »). L'agent est auteur **et** réparateur, jamais juge.
+
+Setup : exécuter `snowflake/06_ci_setup.sql`, puis renseigner les secrets GitHub :
+
+| Secret | Usage |
+|---|---|
+| `SNOWFLAKE_ACCOUNT` | Identifiant de compte |
+| `SNOWFLAKE_CI_USER` | `SVC_CRYPTO_CI` (validation des PR) |
+| `SNOWFLAKE_CI_PRIVATE_KEY_RAW` | Clé privée RSA du user CI (contenu du `.p8`) |
+| `SNOWFLAKE_PROD_USER` | `SVC_CRYPTO` (déploiement prod) |
+| `SNOWFLAKE_PROD_PRIVATE_KEY_RAW` | Clé privée RSA du user prod |
+
+> Aucune clé privée dans le repo : elles vivent uniquement dans GitHub Secrets ; `profiles.yml` ne contient aucun secret.
 </details>
 
 <details>
