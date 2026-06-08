@@ -74,13 +74,18 @@ LIVE views (each with {{ config(materialized='view') }}), filtered to the last 1
    realized volatility (stddev of log returns), and rsi_14 using WILDER smoothing (alpha = 1/14, recursive
    CTE - like TradingView/ta.rma), NOT a simple moving average of gains/losses.
 
-HISTORY as Dynamic Tables (each with
-   {{ config(materialized='dynamic_table', target_lag='1 minute', snowflake_warehouse='WH_CRYPTO_XS', on_configuration_change='apply') }}):
+HISTORY (materialisations selon la maintenabilité incrémentale) :
 
-4. fct_ohlcv_1min — same OHLCV as #1 but full history (no time filter).
-5. fct_orderbook_snapshots — ONE ROW PER TRUE SNAPSHOT: group by (symbol, last_update_id), NOT by
-   ingest_time (multiple snapshots can share one ingest_time → mixed levels → crossed book). Keep
-   ingest_time = MAX(ingest_time) per group. Columns: best_bid, best_ask, mid, spread_bps, imbalance.
+4. fct_ohlcv_1min — full-history OHLCV. Materialize as INCREMENTAL, NOT a Dynamic Table:
+   {{ config(materialized='incremental', unique_key=['symbol','minute'], incremental_strategy='merge') }}
+   open/close use min_by/max_by which are NOT incrementally maintainable -> a DT would full-refresh
+   every target_lag (structural cost). Reprocess only recent minutes with a lookback filter on
+   traded_at, then MERGE on (symbol, minute).
+5. fct_orderbook_snapshots — Dynamic Table OK here (MAX/MIN per group ARE incrementally maintainable) :
+   {{ config(materialized='dynamic_table', target_lag='1 minute', snowflake_warehouse='WH_CRYPTO_XS', on_configuration_change='apply') }}
+   ONE ROW PER TRUE SNAPSHOT: group by (symbol, last_update_id), NOT by ingest_time (multiple snapshots
+   can share one ingest_time → crossed book). Keep ingest_time = MAX(ingest_time) per group.
+   Columns: best_bid, best_ask, mid, spread_bps, imbalance.
 
 6. dim_symbols — from the seed dim_symbols (ref('dim_symbols')).
 

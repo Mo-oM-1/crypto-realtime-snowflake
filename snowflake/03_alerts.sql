@@ -65,13 +65,14 @@ ALTER ALERT ANALYTICS.MONITORING.crypto_freshness_alert RESUME;
 --         'Aucun trade ingéré depuis > 120s. Vérifie le consumer.');
 -- ALTER ALERT ANALYTICS.MONITORING.crypto_freshness_email RESUME;
 
--- 4) TASK — tests dbt planifiés (qualité de données) -----------------
---    Lance `dbt test` toutes les heures via l'objet dbt project natif.
+-- 4) TASK — build dbt planifié (rafraîchit l'incrémental + tests) ----
+--    `dbt build` = run (rafraîchit les modèles INCREMENTAL : fct_ohlcv_1min, etc.) + tests.
+--    (Le temps réel vient des vues live ; l'historique se rafraîchit ici, toutes les heures.)
 CREATE OR REPLACE TASK ANALYTICS.MONITORING.crypto_dbt_test
   WAREHOUSE = WH_CRYPTO_XS
   SCHEDULE  = '60 MINUTE'
   AS
-  EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='test';
+  EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';
 
 ALTER TASK ANALYTICS.MONITORING.crypto_dbt_test RESUME;
 
