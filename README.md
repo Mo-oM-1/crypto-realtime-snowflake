@@ -222,7 +222,8 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 │   ├── 03_alerts.sql             # monitoring : alerte fraicheur + task tests dbt
 │   ├── 04_drift_detection.sql    # detection auto de derive de schema (task quotidienne)
 │   ├── 05_quality_monitoring.sql # task : log des echecs de tests qualite
-│   └── 06_ci_setup.sql           # environnement CI isole (ANALYTICS_CI, role, user de service)
+│   ├── 06_ci_setup.sql           # environnement CI isole (ANALYTICS_CI, role, user de service)
+│   └── 07_ml_anomaly.sql         # surveillance : detection d'anomalies (Cortex ML) + alerte
 ├── ingestion/                    # consumer temps reel (ingestion brute, NE flatten pas)
 │   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> file bornee -> Snowpipe Streaming -> RAW VARIANT
 │   ├── requirements.txt / Dockerfile / profile.json.example
@@ -260,6 +261,23 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
     crypto-ingest
   ```
 - **Reproductibilité** : régénérer -> `$flatten-variant` / `$realtime-marts` ; rebuild -> `EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';`.
+</details>
+
+<details>
+<summary><b>Surveillance : détection d'anomalies (Cortex ML)</b></summary>
+
+Au lieu d'afficher des chiffres bruts, le pipeline **surveille** : un modèle `SNOWFLAKE.ML.ANOMALY_DETECTION` (`07_ml_anomaly.sql`) apprend le volume normal par symbole et flague ce qui en sort - avec intervalle de confiance.
+
+- **Features** : le mart `FCT_OHLCV_1MIN` (volume / minute / symbole), en multi-séries (un sous-modèle par symbole).
+- **Entraînement / scoring disjoints** : le modèle s'entraîne jusqu'à `now-2h` et score `[now-2h, now]` (contrainte Snowflake : la détection ne porte que sur des timestamps postérieurs à l'entraînement).
+- **Sortie** : `ANALYTICS.MONITORING.MART_VOLUME_ANOMALIES` (observé, attendu, bornes de confiance, `is_anomaly`, `distance`).
+- **Orchestration** : ré-entraînement horaire + scoring toutes les 15 min (tasks), + une **alerte** quand une anomalie récente apparaît.
+- **Sensibilité** : `prediction_interval` (0.99 = prudent pour la prod ; plus bas = plus sensible).
+- **Consommateurs** : l'**alerte** (notification) et le **dashboard** (panneaux *anomalies* + *santé pipeline*).
+
+C'est ce qui distingue ce modèle entraîné (tendance, saisonnalité, intervalle de confiance) du z-score live naïf de `VW_MARKET_METRICS_LIVE` (seuil fixe). Anomalie réelle détectée en test : l'effondrement du volume quand le flux s'arrête (la source "meurt").
+
+> La couche se suspend hors démo (tasks/alerte en `SUSPEND`) ; elle ne produit des anomalies live que si le consumer tourne en continu.
 </details>
 
 <details>
