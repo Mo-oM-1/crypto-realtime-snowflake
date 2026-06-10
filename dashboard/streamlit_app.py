@@ -151,9 +151,9 @@ def live_dashboard():
         else:
             last = metrics.iloc[-1]
             rsi, vol_r, chg = last["RSI_14"], last["REALIZED_VOLATILITY"], last["PRICE_CHANGE_PCT_5MIN"]
-            st.metric("RSI 14", f"{rsi:.1f}" if rsi is not None else "warm-up")
-            st.metric("Volatilite realisee", f"{vol_r:.4f}" if vol_r is not None else "-")
-            st.metric("Variation 5 min", f"{chg:+.2f}%" if chg is not None else "-")
+            st.metric("RSI 14", "warm-up" if pd.isna(rsi) else f"{rsi:.1f}")
+            st.metric("Volatilite realisee", "-" if pd.isna(vol_r) else f"{vol_r:.4f}")
+            st.metric("Variation 5 min", "-" if pd.isna(chg) else f"{chg:+.2f}%")
 
     # --- RSI dans le temps avec bandes 30 / 70 ---
     if not metrics.empty and metrics["RSI_14"].notna().any():
