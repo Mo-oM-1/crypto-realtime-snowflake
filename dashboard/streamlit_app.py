@@ -12,6 +12,7 @@ Necessite Streamlit >= 1.37 (st.fragment / run_every).
 import logging
 
 import altair as alt
+import pandas as pd
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
 
@@ -78,7 +79,8 @@ def load_slo(_session):
                ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (
                      ORDER BY DATEDIFF('ms', traded_at, ingest_time)) / 1000.0, 3) AS p95_s,
                ROUND(COUNT(*) / 300.0, 1) AS trades_per_s,
-               DATEDIFF('second', MAX(ingest_time), SYSDATE()) AS freshness_s
+               (SELECT DATEDIFF('second', MAX(ingest_time), SYSDATE())
+                FROM {STG}.STG_TRADES) AS freshness_s
         FROM {STG}.STG_TRADES
         WHERE ingest_time >= DATEADD('minute', -5, SYSDATE())
     """).to_pandas()
@@ -197,12 +199,12 @@ def live_dashboard():
         if not slo.empty:
             s = slo.iloc[0]
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Latence moy (s)", s["AVG_S"] if s["AVG_S"] is not None else "-")
-            c2.metric("Latence p95 (s)", s["P95_S"] if s["P95_S"] is not None else "-")
-            c3.metric("Trades / s", s["TRADES_PER_S"] if s["TRADES_PER_S"] is not None else "-")
+            c1.metric("Latence moy (s)", "-" if pd.isna(s["AVG_S"]) else s["AVG_S"])
+            c2.metric("Latence p95 (s)", "-" if pd.isna(s["P95_S"]) else s["P95_S"])
+            c3.metric("Trades / s", "-" if pd.isna(s["TRADES_PER_S"]) else s["TRADES_PER_S"])
             fr = s["FRESHNESS_S"]
-            c4.metric("Fraicheur (s)", int(fr) if fr is not None else "-")
-            if fr is not None and int(fr) > 120:
+            c4.metric("Fraicheur (s)", "-" if pd.isna(fr) else int(fr))
+            if not pd.isna(fr) and int(fr) > 120:
                 st.warning("Donnees obsoletes (> 120 s) - le consumer tourne-t-il ?")
     except Exception as exc:
         logger.exception("panneau SLO indisponible")
