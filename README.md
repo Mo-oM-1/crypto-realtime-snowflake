@@ -223,7 +223,8 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 │   ├── 04_drift_detection.sql    # detection auto de derive de schema (task quotidienne)
 │   ├── 05_quality_monitoring.sql # task : log des echecs de tests qualite
 │   ├── 06_ci_setup.sql           # environnement CI isole (ANALYTICS_CI, role, user de service)
-│   └── 07_ml_anomaly.sql         # surveillance : detection d'anomalies (Cortex ML) + alerte
+│   ├── 07_ml_anomaly.sql         # surveillance : detection d'anomalies (Cortex ML) + alerte
+│   └── 08_raw_retention.sql      # purge RAW (borne le scan) - RAW = buffer, historique dans ANALYTICS
 ├── ingestion/                    # consumer temps reel (ingestion brute, NE flatten pas)
 │   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> file bornee -> Snowpipe Streaming -> RAW VARIANT
 │   ├── requirements.txt / Dockerfile / profile.json.example
@@ -252,6 +253,7 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 
 - **Monitoring automatisé** (`03_alerts.sql`) : alerte de fraîcheur + tests dbt horaires (schéma `ANALYTICS.MONITORING`).
 - **Rafraîchissement continu** : Snowpipe Streaming + Dynamic Tables (`target_lag='1 minute'`), pas de cron dans le chemin critique.
+- **Rétention RAW** (`08_raw_retention.sql`) : purge quotidienne de RAW > 7 jours. RAW est un **buffer** ; l'historique long terme vit dans les marts incrémentaux (`ANALYTICS`). Borne le volume scanné par le dedup de `stg_trades` (sinon le scan grossit sans fin).
 - **Hébergement 24/7** du consumer via Docker :
   ```bash
   docker build -t crypto-ingest ./ingestion
