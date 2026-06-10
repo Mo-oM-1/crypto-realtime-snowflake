@@ -12,7 +12,7 @@ with recent as (
     -- Fenêtre sur INGEST_TIME (heure de réception) : le partial book depth Binance n'a PAS
     -- d'event-time propre, contrairement aux trades (qui ont traded_at). Choix assumé.
     -- sysdate() (UTC NTZ) pour rester cohérent avec ingest_time (NTZ UTC).
-    where ingest_time >= dateadd('minute', -120, sysdate())
+    where ingest_time >= dateadd('minute', -{{ var('live_window_minutes', 120) }}, sysdate())
 
 ),
 

@@ -245,7 +245,7 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 └── runbook/cortex_code_prompts.md
 ```
 
-> `models/` est volontairement vide : les modèles sont **produits par l'agent**, pas écrits à la main.
+> Les modèles de `models/` sont **produits par l'agent** (Cortex Code, `$flatten-variant`), pas écrits à la main, puis versionnés et testés (unit tests + tests métier).
 </details>
 
 <details>

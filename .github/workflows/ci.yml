@@ -72,7 +72,8 @@ jobs:
           persist-credentials: false
       - name: Setup Snowflake CLI
         uses: snowflakedb/snowflake-cli-action@v1.5
-        # cli-version non epingle = derniere version (les commandes `snow dbt` requierent >= 3.13.0)
+        with:
+          cli-version: "3.20.0"   # epingle = builds reproductibles (>= 3.13.0 requis pour `snow dbt`)
       - name: Deploy + build + test on ANALYTICS_CI
         env:
           SNOWFLAKE_AUTHENTICATOR: SNOWFLAKE_JWT
@@ -104,6 +105,8 @@ jobs:
           persist-credentials: false
       - name: Setup Snowflake CLI
         uses: snowflakedb/snowflake-cli-action@v1.5
+        with:
+          cli-version: "3.20.0"
       - name: Deploy + build on ANALYTICS
         env:
           SNOWFLAKE_AUTHENTICATOR: SNOWFLAKE_JWT

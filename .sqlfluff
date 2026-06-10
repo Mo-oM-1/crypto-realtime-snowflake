@@ -23,6 +23,8 @@ warnings = references.qualification
 # is_incremental() = False -> le filtre incremental n'est pas rendu au lint
 # (sa logique est validee par `dbt build` dans Snowflake, cote CI).
 apply_dbt_builtins = true
+# Charge les macros du projet (ex. ohlcv_select) pour que le lint sache les rendre.
+load_macros_from_path = macros
 
 # Conventions du repo : mots-cles / fonctions / identifiants / litteraux en minuscules.
 [sqlfluff:rules:capitalisation.keywords]
