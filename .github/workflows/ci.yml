@@ -3,17 +3,11 @@ name: CI
 # Gouvernance "anti vibe-coding" : l'agent (Cortex Code + skills) ECRIT les modeles,
 # cette CI les VALIDE avant merge. Lint -> build+tests dans une base CI isolee.
 on:
+  # Pas de filtre `paths` sur les PR : les checks sont REQUIS par la branch protection,
+  # donc ils doivent TOUJOURS se lancer (sinon une PR hors `models/` reste bloquee en
+  # "waiting for status"). lint + build-ci sont rapides.
   pull_request:
     branches: [main]
-    paths:
-      - 'models/**'
-      - 'tests/**'
-      - 'seeds/**'
-      - 'macros/**'
-      - 'dbt_project.yml'
-      - 'profiles.yml'
-      - '.sqlfluff'
-      - '.github/workflows/ci.yml'
   push:
     branches: [main]
     paths:
