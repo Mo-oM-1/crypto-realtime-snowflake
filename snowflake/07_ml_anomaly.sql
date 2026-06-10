@@ -29,15 +29,20 @@ USE WAREHOUSE WH_CRYPTO_XS;
 -- 3) Vues de features (volume par symbole / minute) -------------------
 --    SERIES = identifiant de serie (un modele multi-series, un sous-modele par symbole).
 --    La doc recommande un VARIANT pour la colonne serie -> to_variant(symbol).
+-- CONTRAINTE Snowflake AD : DETECT_ANOMALIES ne peut scorer que des timestamps
+-- POSTERIEURS a la fin des donnees d'entrainement (le modele prevoit l'apres-T et
+-- compare les nouveaux points a sa prevision). On coupe donc l'entrainement a now-2h,
+-- et on score [now-2h, now]. Fenetres DISJOINTES et ORDONNEES.
 CREATE OR REPLACE VIEW ANALYTICS.MONITORING.VW_VOLUME_HISTORY AS
   SELECT to_variant(symbol) AS symbol, minute, volume
   FROM ANALYTICS.PUBLIC_MARTS.FCT_OHLCV_1MIN
-  WHERE minute >= dateadd('day', -7, sysdate());   -- fenetre d'ENTRAINEMENT (apprend le normal)
+  WHERE minute >= dateadd('day', -7, sysdate())
+    AND minute <  dateadd('hour', -2, sysdate());  -- ENTRAINEMENT : jusqu'a now-2h (exclu)
 
 CREATE OR REPLACE VIEW ANALYTICS.MONITORING.VW_VOLUME_RECENT AS
   SELECT to_variant(symbol) AS symbol, minute, volume
   FROM ANALYTICS.PUBLIC_MARTS.FCT_OHLCV_1MIN
-  WHERE minute >= dateadd('hour', -2, sysdate());  -- fenetre a SCORER (recent)
+  WHERE minute >= dateadd('hour', -2, sysdate());  -- SCORING : [now-2h, now], apres l'entrainement
 
 -- 4) Table de resultats (lue par l'alerte + le dashboard) -------------
 CREATE TABLE IF NOT EXISTS ANALYTICS.MONITORING.MART_VOLUME_ANOMALIES (
@@ -102,7 +107,7 @@ CALL ANALYTICS.MONITORING.SP_SCORE_VOLUME_ANOMALIES();
 -- 7a) Re-entrainement quotidien (apprend le normal sur 7 jours glissants)
 CREATE OR REPLACE TASK ANALYTICS.MONITORING.crypto_anomaly_retrain
   WAREHOUSE = WH_CRYPTO_XS
-  SCHEDULE  = 'USING CRON 0 3 * * * UTC'   -- chaque jour a 03:00 UTC
+  SCHEDULE  = '60 MINUTE'   -- horaire : la fin d'entrainement suit now-2h => horizon de prevision court
   AS
   CREATE OR REPLACE SNOWFLAKE.ML.ANOMALY_DETECTION ANALYTICS.MONITORING.crypto_volume_ad(
       INPUT_DATA        => TABLE(ANALYTICS.MONITORING.VW_VOLUME_HISTORY),
