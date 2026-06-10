@@ -1,6 +1,8 @@
 # Outils de DEV / CI (PAS des dependances runtime du consumer : voir ingestion/requirements.txt).
-# Installes par le job `lint` de la CI et en local pour reproduire la CI a l'identique.
-sqlfluff==4.2.2
+# Installes par les jobs de CI et en local pour reproduire la CI a l'identique.
+sqlfluff==4.2.2     # lint SQL (modeles dbt)
+pytest==9.0.3       # tests unitaires du consumer Python
+ruff==0.15.16       # lint Python (consumer + dashboard)
 
 # NB : le Snowflake CLI (`snow`) n'est volontairement PAS ici.
 #   - en CI  : fourni par l'action snowflakedb/snowflake-cli-action

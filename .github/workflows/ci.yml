@@ -41,6 +41,25 @@ jobs:
       - name: sqlfluff lint
         run: sqlfluff lint models/ tests/
 
+  # 1bis) PYTHON - lint (ruff) + tests unitaires du consumer (pytest), sans secret
+  python-tests:
+    name: Python (ruff + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dev tools
+        run: pip install -r requirements-dev.txt
+      - name: ruff (lint Python)
+        run: ruff check ingestion/ dashboard/
+      - name: pytest (consumer)
+        run: pytest ingestion/tests -q
+        # Le module a des imports tiers LAZY -> pas besoin d'installer le SDK Snowflake / websocket ici.
+
   # 2) BUILD + TESTS sur la base CI isolee (ANALYTICS_CI) - gate des Pull Requests
   build-ci:
     name: dbt build (ANALYTICS_CI)

@@ -1,0 +1,74 @@
+version: 2
+
+# Unit tests dbt (>= 1.8) : testent la LOGIQUE de transformation sur des entrees
+# mockees, sans donnee live. Tournent avec `dbt test` / `dbt build` (donc en CI).
+# Un unit test ne compare QUE les colonnes declarees dans `expect`.
+
+unit_tests:
+
+  # ------------------------------------------------------------------
+  # OHLCV : open = premier trade (min trade_id), close = dernier (max),
+  # high/low = max/min prix, volume = somme des quantites.
+  # ------------------------------------------------------------------
+  - name: ut_fct_ohlcv_1min_aggregation
+    description: Agregation OHLCV 1 min a partir de trades mockes (open/high/low/close/volume).
+    model: fct_ohlcv_1min
+    overrides:
+      macros:
+        is_incremental: false      # teste la logique en plein (pas le chemin incremental)
+    given:
+      - input: ref('stg_trades')
+        rows:
+          - {symbol: BTCUSDT, trade_id: 1, price: 100, quantity: 2, traded_at: "2026-06-10 12:00:05"}
+          - {symbol: BTCUSDT, trade_id: 2, price: 102, quantity: 1, traded_at: "2026-06-10 12:00:20"}
+          - {symbol: BTCUSDT, trade_id: 3, price: 99,  quantity: 3, traded_at: "2026-06-10 12:00:40"}
+          - {symbol: BTCUSDT, trade_id: 4, price: 101, quantity: 4, traded_at: "2026-06-10 12:00:55"}
+    expect:
+      rows:
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:00:00", open: 100, high: 102, low: 99, close: 101, volume: 10}
+
+  # ------------------------------------------------------------------
+  # RSI (Wilder) : serie symetrique +1/-1 -> avg_gain = avg_loss -> RS = 1
+  # -> RSI = 50 (exact). Le dernier point (delta 0) exerce la recursion de Wilder.
+  # RSI null tant qu'il n'y a pas 14 variations (seed pose a rn = 15).
+  # ------------------------------------------------------------------
+  - name: ut_vw_market_metrics_live_rsi_wilder
+    description: RSI de Wilder sur une serie symetrique -> 50 exact (teste split gain/perte, seed, recursion, formule).
+    model: vw_market_metrics_live
+    given:
+      - input: ref('vw_ohlcv_1min_live')
+        rows:
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:00:00", close: 100, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:01:00", close: 101, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:02:00", close: 100, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:03:00", close: 101, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:04:00", close: 100, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:05:00", close: 101, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:06:00", close: 100, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:07:00", close: 101, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:08:00", close: 100, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:09:00", close: 101, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:10:00", close: 100, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:11:00", close: 101, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:12:00", close: 100, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:13:00", close: 101, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:14:00", close: 100, volume: 10}
+          - {symbol: BTCUSDT, minute: "2026-06-10 12:15:00", close: 100, volume: 10}
+    expect:
+      rows:
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:00:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:01:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:02:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:03:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:04:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:05:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:06:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:07:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:08:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:09:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:10:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:11:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:12:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:13:00", rsi_14: null}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:14:00", rsi_14: 50}
+        - {symbol: BTCUSDT, minute: "2026-06-10 12:15:00", rsi_14: 50}
