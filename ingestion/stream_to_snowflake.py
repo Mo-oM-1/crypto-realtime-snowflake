@@ -40,8 +40,8 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-import websocket  # paquet "websocket-client"
-from snowflake.ingest.streaming import StreamingIngestClient
+# Les imports tiers (snowpipe-streaming, websocket-client) sont charges en LAZY,
+# au moment de l'usage reel : le module reste importable (et testable) sans ces deps.
 
 # --- Configuration (variables d'environnement, avec valeurs par defaut) ------
 SYMBOLS = [s.strip().lower()
@@ -77,6 +77,8 @@ class TableChannel:
     """
 
     def __init__(self, table: str):
+        from snowflake.ingest.streaming import StreamingIngestClient  # import lazy
+
         self.table = table
         self.pipe = f"{table}-STREAMING"  # default pipe (auto-cree par Snowflake)
         self.client = StreamingIngestClient(
@@ -113,14 +115,17 @@ class TableChannel:
 
 
 class CryptoIngestor:
-    def __init__(self):
-        self.trades = TableChannel(TRADES_TABLE)
-        self.depth = TableChannel(DEPTH_TABLE)
+    def __init__(self, trades=None, depth=None, clock=None):
+        # Injection de dependances : en prod on cree les vrais canaux Snowpipe ;
+        # en test on injecte de faux canaux + une horloge deterministe (clock).
+        self.trades = trades if trades is not None else TableChannel(TRADES_TABLE)
+        self.depth = depth if depth is not None else TableChannel(DEPTH_TABLE)
+        self._clock = clock or (lambda: datetime.now(timezone.utc).replace(tzinfo=None))
         self._stop = threading.Event()
         self._connected = threading.Event()
         self.ws = None
         # file bornee de decouplage WebSocket -> writer
-        self.q: "queue.Queue[tuple[TableChannel, dict, datetime]]" = queue.Queue(maxsize=QUEUE_MAXSIZE)
+        self.q: "queue.Queue[tuple[object, dict, datetime]]" = queue.Queue(maxsize=QUEUE_MAXSIZE)
         # compteurs (chaque compteur n'est ecrit que par UN thread -> pas de verrou)
         self.enqueued = 0   # ecrit par le thread WebSocket
         self.dropped = 0    # ecrit par le thread WebSocket
@@ -133,7 +138,7 @@ class CryptoIngestor:
 
     def on_message(self, _ws, message: str):
         # Heure de RECEPTION, estampillee AVANT la mise en file (cf. note dans append()).
-        ingest_ts = datetime.now(timezone.utc).replace(tzinfo=None)
+        ingest_ts = self._clock()
         try:
             msg = json.loads(message)
         except json.JSONDecodeError:
@@ -163,29 +168,36 @@ class CryptoIngestor:
         log.warning("WS ferme (code=%s reason=%s)", code, reason)
 
     # ---- thread writer : draine la file en micro-batch et ecrit dans Snowflake ----
+    def _drain_once(self, timeout: float = 0.5) -> bool:
+        """Draine UN micro-batch et l'ecrit. Retourne False si la file etait vide.
+
+        Une seule iteration du writer, extraite pour etre testable sans thread."""
+        try:
+            first = self.q.get(timeout=timeout)
+        except queue.Empty:
+            return False
+        # Micro-batch adaptatif : coalesce ce qui est DEJA disponible, sans attendre.
+        # A faible charge -> batch de 1 (latence minimale) ; en rafale -> jusqu'a BATCH_MAX_ROWS.
+        batch = [first]
+        deadline = time.monotonic() + BATCH_MAX_SECS
+        while len(batch) < BATCH_MAX_ROWS and time.monotonic() < deadline:
+            try:
+                batch.append(self.q.get_nowait())
+            except queue.Empty:
+                break
+        for target, record, ts in batch:
+            try:
+                target.append(record, ts)
+                self.processed += 1
+            except Exception as e:  # pragma: no cover
+                log.warning("append %s: %s", target.table, e)
+        return True
+
     def writer_loop(self):
         while True:
-            try:
-                first = self.q.get(timeout=0.5)
-            except queue.Empty:
-                if self._stop.is_set():
-                    break          # stop demande ET file vide -> on sort
-                continue
-            # Micro-batch adaptatif : coalesce ce qui est DEJA disponible, sans attendre.
-            # A faible charge -> batch de 1 (latence minimale) ; en rafale -> jusqu'a BATCH_MAX_ROWS.
-            batch = [first]
-            deadline = time.monotonic() + BATCH_MAX_SECS
-            while len(batch) < BATCH_MAX_ROWS and time.monotonic() < deadline:
-                try:
-                    batch.append(self.q.get_nowait())
-                except queue.Empty:
-                    break
-            for target, record, ts in batch:
-                try:
-                    target.append(record, ts)
-                    self.processed += 1
-                except Exception as e:  # pragma: no cover
-                    log.warning("append %s: %s", target.table, e)
+            processed = self._drain_once()
+            if not processed and self._stop.is_set():
+                break          # stop demande ET file vide -> on sort
 
     # ---- boucle de stats (SLO / observabilite) ----
     def stats_loop(self):
@@ -223,6 +235,8 @@ def build_url() -> str:
 
 
 def main():
+    import websocket  # import lazy (paquet "websocket-client")
+
     ing = CryptoIngestor()
     signal.signal(signal.SIGINT, ing.stop)
     signal.signal(signal.SIGTERM, ing.stop)

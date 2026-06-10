@@ -102,7 +102,7 @@ try:
     if anom.empty:
         st.info("Aucune donnée scorée pour l'instant (lance snowflake/07_ml_anomaly.sql ou attends le prochain scoring).")
     else:
-        flagged = anom[anom["IS_ANOMALY"] == True]
+        flagged = anom[anom["IS_ANOMALY"]]
         c1, c2 = st.columns(2)
         c1.metric("Anomalies (2 h)", len(flagged))
         c2.metric("Points scorés (2 h)", len(anom))
@@ -122,7 +122,7 @@ try:
                 .encode(x="MINUTE:T", y=alt.Y("VOLUME:Q", scale=alt.Scale(zero=False)))
             )
             pts = (
-                alt.Chart(a[a["IS_ANOMALY"] == True]).mark_point(color="red", size=90, filled=True)
+                alt.Chart(a[a["IS_ANOMALY"]]).mark_point(color="red", size=90, filled=True)
                 .encode(x="MINUTE:T", y="VOLUME:Q")
             )
             st.altair_chart((band + line + pts).properties(height=260), width="stretch")

@@ -227,6 +227,7 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 ├── ingestion/                    # consumer temps reel (ingestion brute, NE flatten pas)
 │   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> file bornee -> Snowpipe Streaming -> RAW VARIANT
 │   ├── requirements.txt / Dockerfile / profile.json.example
+│   └── tests/test_consumer.py    #   tests unitaires consumer (pytest) : routage, backpressure, horodatage
 ├── .cortex/skills/               # skills Cortex Code
 │   ├── flatten-variant/          #   build (structure + doc + tests de cles)
 │   ├── check-schema-drift/       #   self-healing
@@ -285,7 +286,7 @@ C'est ce qui distingue ce modèle entraîné (tendance, saisonnalité, intervall
 
 L'agent (Cortex Code + skills) **écrit** les modèles ; la CI les **valide** avant merge. C'est le garde-fou anti « vibe-coding » : le skill encode l'intention, la CI prouve qu'elle est respectée.
 
-- **Sur Pull Request** (`.github/workflows/ci.yml`) : `sqlfluff lint` (conventions du repo) puis `snow dbt deploy` + `snow dbt execute build` dans une **base CI isolée** (`ANALYTICS_CI`, rôle `CRYPTO_CI_ROLE`, lecture seule sur `RAW`). Un échec de test **bloque** la PR ; une PR ne peut jamais écrire en prod.
+- **Sur Pull Request** (`.github/workflows/ci.yml`) : `sqlfluff lint` (SQL) + `ruff`/`pytest` (consumer Python) + `snow dbt deploy` / `snow dbt execute build` dans une **base CI isolée** (`ANALYTICS_CI`, rôle `CRYPTO_CI_ROLE`, lecture seule sur `RAW`). Un échec **bloque** la PR ; une PR ne peut jamais écrire en prod.
 - **Sur merge vers `main`** : déploiement prod (`snow dbt` natif), protégeable par un environment GitHub à reviewers obligatoires.
 - **Moteur** : 100 % natif via Snowflake CLI (`snow dbt`), aucun dbt Core à maintenir.
 - **Boucle agentique** : si la CI casse, on redonne l'erreur à Cortex Code (skills `check-schema-drift` / `generate-quality-tests`, qui buildent « jusqu'au vert »). L'agent est auteur **et** réparateur, jamais juge.
