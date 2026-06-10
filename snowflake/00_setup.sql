@@ -51,9 +51,9 @@ GRANT ROLE CRYPTO_PIPELINE_ROLE TO USER TOBIASR;
 --    Génère la clé en local :
 --      openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
 --      openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
---    Clé publique déjà enregistrée ci-dessous (générée le 2026-06-06).
+--    Clé publique enregistrée ci-dessous (rotation 2026-06-10).
 --    C'est SVC_CRYPTO que le consumer utilise (via profile.json).
-ALTER USER SVC_CRYPTO SET RSA_PUBLIC_KEY='MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhSQ28YfhOfaP7xtDFCudaQK04ByStOSwks3GUpoibi0ToPsaSOY5NbCZ03WC/WvDk4ha8ENk0wSREVRG5Ad0hh8vztklOmaoXSczkS6yLXlahIXr5pUv3RFCycxd3YfTGgrbawCaL8yS08UdKglutwq9vd944dByEUC2COCI3N8ODsaOeEHbaX6TN90W3GzQHGZjUQLsoy4bseNHqKYm6d0YdJAwQ5WFbNyP0g45eo1T0H86DupQCyM39vlWM/w1dc6yB5jyVLT4pewTknWFuUpyxzZ3sXhMBPNUa7rFVefjrrkvot8eFxTy0PMAsXv1PcX0/WwsiYeeBlEF8w/AgwIDAQAB';
+ALTER USER SVC_CRYPTO SET RSA_PUBLIC_KEY='MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9IHubNe3wN8TVr6E5OUDJe1tJ50Xn23++RHKHbN8x6FQre0GgF6xPSWck1U3JwbhVew6nygTB21bTUCX/OWo94tdiJbz/SnZw+MIIMebrmsz/CeJowhteLpaFhbeUcvy9NJPDabKnfcQHJ65EK0oCZRdCZGiXz/27XMfIXbG6f89EWt4G1AFIWZTWCT9QNIRATy5ijyE/ldOcMuXme8RXZldWpH5Zl8rP0hwdSr1uI7Fp2GiHIwK+UFDY6H/xCcC7c1d0cunZH1zF9JWPyaufFQN6KdqjyA9G5n7O35UHYnchPYBy9c/rCuwA9rijLYGe5hBGIas6IWBZxE9sCQXRQIDAQAB';
 
 -- ---------------------------------------------------------------------
 -- 6) Tables Bronze (VARIANT brut) — alimentées par Snowpipe Streaming
