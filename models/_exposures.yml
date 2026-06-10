@@ -1,0 +1,20 @@
+version: 2
+
+# Exposures : declarent les consommateurs AVAL des modeles, pour que le lineage dbt
+# sache que le dashboard depend de ces marts (impact analysis, `dbt build -s +exposure:...`).
+exposures:
+  - name: crypto_realtime_dashboard
+    label: Crypto Real-Time Dashboard
+    type: dashboard
+    maturity: high
+    description: >
+      Dashboard Streamlit-in-Snowflake : OHLCV live, metriques d'order book,
+      surveillance d'anomalies (Cortex ML) et sante du pipeline.
+    depends_on:
+      - ref('vw_ohlcv_1min_live')
+      - ref('vw_orderbook_metrics_live')
+      - ref('vw_market_metrics_live')
+      - ref('stg_trades')
+    owner:
+      name: MooM
+      email: mofouad.h@gmail.com
