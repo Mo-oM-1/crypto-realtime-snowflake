@@ -46,7 +46,7 @@ jobs:
       - name: Install dev tools
         run: pip install -r requirements-dev.txt
       - name: ruff (lint Python)
-        run: ruff check ingestion/ dashboard/
+        run: ruff check ingestion/ dash/
       - name: pytest (consumer)
         run: pytest ingestion/tests -q
         # Le module a des imports tiers LAZY -> pas besoin d'installer le SDK Snowflake / websocket ici.
