@@ -188,7 +188,7 @@ python stream_to_snowflake.py
 # 3. Generer les modeles (Cortex Code, Snowsight, role CRYPTO_PIPELINE_ROLE)
 #    $flatten-variant   puis   $realtime-marts     (cf. runbook/cortex_code_prompts.md)
 
-# 4. Dashboard : deployer dashboard/streamlit_app.py en Streamlit in Snowflake
+# 4. Dashboard : deployer dash/streamlit_app.py en Streamlit in Snowflake
 ```
 
 <details>
@@ -241,7 +241,7 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 ├── models/                       # GENERE par Cortex Code (flatten + marts)
 ├── tests/                        # tests qualite (singular) - skill generate-quality-tests
 ├── seeds/dim_symbols.csv
-├── dashboard/streamlit_app.py
+├── dash/streamlit_app.py
 └── runbook/cortex_code_prompts.md
 ```
 
