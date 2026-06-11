@@ -203,6 +203,65 @@ def page_home():
 
 
 @st.fragment(run_every=10)
+def page_trader():
+    # Vue RETAIL : traduit le flux d'ordres en langage simple (pression, RSI, volume).
+    sym = current_symbol()
+    st.header(f"Vue trader - {sym}")
+    st.caption(
+        "Lecture simplifiee du flux d'ordres. Detail sur Microstructure / Prix & carnet. "
+        "Contexte, pas un conseil."
+    )
+    ohlcv, cvd, movers = load_ohlcv(session, sym), load_cvd(session, sym), load_movers(session)
+    row = movers[movers["SYMBOL"] == sym]
+    close = ohlcv["CLOSE"].iloc[-1] if not ohlcv.empty else None
+    chg5 = row["PRICE_CHANGE_PCT_5MIN"].iloc[0] if not row.empty else None
+    rsi = row["RSI_14"].iloc[0] if not row.empty else None
+    vol_anom = bool(row["IS_VOLUME_ANOMALY"].iloc[0]) if not row.empty else False
+    recent_delta = float(cvd["DELTA"].tail(10).sum()) if not cvd.empty else 0.0
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Prix", "-" if close is None else f"{close:.2f}",
+              None if (chg5 is None or pd.isna(chg5)) else f"{chg5:+.2f}% / 5min")
+    pression = "Acheteurs" if recent_delta > 0 else "Vendeurs" if recent_delta < 0 else "Equilibre"
+    c2.metric("Pression (10 min)", pression)
+    if rsi is None or pd.isna(rsi):
+        rsi_txt, rsi_val = "warm-up", None
+    elif rsi >= 70:
+        rsi_txt, rsi_val = "Surachat", f"{rsi:.0f}"
+    elif rsi <= 30:
+        rsi_txt, rsi_val = "Survente", f"{rsi:.0f}"
+    else:
+        rsi_txt, rsi_val = "Neutre", f"{rsi:.0f}"
+    c3.metric("RSI", rsi_txt, rsi_val)
+    c4.metric("Volume", "ANORMAL" if vol_anom else "Normal")
+
+    bits = []
+    if recent_delta > 0:
+        bits.append("les acheteurs poussent (CVD en hausse)")
+    elif recent_delta < 0:
+        bits.append("les vendeurs poussent (CVD en baisse)")
+    if rsi_txt == "Surachat":
+        bits.append("RSI en surachat (essoufflement haussier possible)")
+    elif rsi_txt == "Survente":
+        bits.append("RSI en survente (rebond possible)")
+    if vol_anom:
+        bits.append("volume anormal en cours (un gros acteur ?)")
+    verdict = "Lecture rapide : " + ("; ".join(bits) if bits else "marche calme, rien de notable") + "."
+    (st.success if recent_delta > 0 else st.error if recent_delta < 0 else st.info)(verdict)
+
+    if not ohlcv.empty:
+        up_down = alt.condition("datum.OPEN <= datum.CLOSE", alt.value(UP), alt.value(DOWN))
+        tip = [_tmin(), alt.Tooltip("OPEN:Q", format=".2f"), alt.Tooltip("HIGH:Q", format=".2f"),
+               alt.Tooltip("LOW:Q", format=".2f"), alt.Tooltip("CLOSE:Q", format=".2f")]
+        base = alt.Chart(ohlcv).encode(
+            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)), color=up_down)
+        wick = base.mark_rule().encode(
+            y=alt.Y("LOW:Q", scale=alt.Scale(zero=False), title="prix"), y2="HIGH:Q")
+        body = base.mark_bar(size=6).encode(y="OPEN:Q", y2="CLOSE:Q", tooltip=tip)
+        st.altair_chart(_style(wick + body, 320), theme=None, width="stretch")
+
+
+@st.fragment(run_every=10)
 def page_prix():
     sym = current_symbol()
     st.header(f"Prix & carnet - {sym}")
@@ -384,6 +443,7 @@ def page_sante():
 # =========================== NAVIGATION ===========================
 nav = st.navigation([
     st.Page(page_home, title="Accueil", icon="🏠", default=True),
+    st.Page(page_trader, title="Vue trader", icon="🎯"),
     st.Page(page_prix, title="Prix & carnet", icon="📈"),
     st.Page(page_micro, title="Microstructure", icon="🌊"),
     st.Page(page_cross, title="Cross-symbole", icon="🔀"),
