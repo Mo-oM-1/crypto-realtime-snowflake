@@ -79,11 +79,21 @@ def load_slo(_session):
                ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (
                      ORDER BY DATEDIFF('ms', traded_at, ingest_time)) / 1000.0, 3) AS p95_s,
                ROUND(COUNT(*) / 300.0, 1) AS trades_per_s,
+               -- Fraicheur lue DIRECT sur RAW (un MAX(ingest_time) n'a pas besoin du dedup
+               -- QUALIFY de stg_trades) -> moins cher.
                (SELECT DATEDIFF('second', MAX(ingest_time), SYSDATE())
-                FROM {STG}.STG_TRADES) AS freshness_s
+                FROM RAW.CRYPTO.RAW_TRADES) AS freshness_s
         FROM {STG}.STG_TRADES
         WHERE ingest_time >= DATEADD('minute', -5, SYSDATE())
     """).to_pandas()
+
+
+@st.cache_data(ttl=10)
+def load_events(_session):
+    return _session.sql(
+        f"SELECT checked_at, metric, value, status FROM {MON}.pipeline_log "
+        f"ORDER BY checked_at DESC LIMIT 10"
+    ).to_pandas()
 
 
 @st.cache_data(ttl=10)
@@ -211,10 +221,7 @@ def live_dashboard():
         st.warning(f"SLO indisponible: {exc}")
 
     try:
-        events = session.sql(
-            f"SELECT checked_at, metric, value, status FROM {MON}.pipeline_log "
-            f"ORDER BY checked_at DESC LIMIT 10"
-        ).to_pandas()
+        events = load_events(session)
         if not events.empty:
             st.caption("Derniers evenements (alertes fraicheur / anomalies / tests)")
             st.dataframe(events, width="stretch")
