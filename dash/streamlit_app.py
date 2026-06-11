@@ -9,6 +9,7 @@ Marts dbt lus :
 Necessite Streamlit >= 1.36 (st.navigation) et >= 1.37 (st.fragment / run_every).
 """
 import logging
+from datetime import datetime, timezone
 
 import altair as alt
 import numpy as np
@@ -457,5 +458,12 @@ with st.sidebar:
     _symbols = load_symbols(session)
     st.selectbox("Symbole", _symbols or ["BTCUSDT"], key="symbol")
     st.caption("Rafraichissement auto : 10 s")
+    _utc = datetime.now(timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        _loc = _utc.astimezone(ZoneInfo("Europe/Paris"))
+        st.caption(f"Heures des graphes en UTC ({_utc:%H:%M} UTC = {_loc:%H:%M} Paris)")
+    except Exception:
+        st.caption("Heures des graphes en UTC (Paris = UTC+2 en ete, +1 en hiver)")
 
 nav.run()
