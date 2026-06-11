@@ -1,12 +1,12 @@
 """Dashboard Streamlit (in Snowflake) - crypto temps reel + surveillance.
-Marts dbt lus (generes par Cortex Code) :
-    ANALYTICS.PUBLIC_MARTS.VW_OHLCV_1MIN_LIVE
-    ANALYTICS.PUBLIC_MARTS.VW_ORDERBOOK_METRICS_LIVE
-    ANALYTICS.PUBLIC_MARTS.VW_MARKET_METRICS_LIVE
-    ANALYTICS.MONITORING.MART_VOLUME_ANOMALIES (surveillance Cortex ML)
 
-Deploiement : Snowsight -> Streamlit -> New app (warehouse WH_CRYPTO_XS).
-Necessite Streamlit >= 1.37 (st.fragment / run_every).
+App MULTIPAGE (st.navigation / st.Page) : une page par theme, sidebar a gauche,
+selecteur de symbole partage (sidebar) applique a toutes les pages.
+
+Marts dbt lus :
+    ANALYTICS.PUBLIC_MARTS.VW_OHLCV_1MIN_LIVE / VW_ORDERBOOK_METRICS_LIVE / VW_MARKET_METRICS_LIVE
+    ANALYTICS.MONITORING.MART_VOLUME_ANOMALIES (surveillance Cortex ML)
+Necessite Streamlit >= 1.36 (st.navigation) et >= 1.37 (st.fragment / run_every).
 """
 import logging
 
@@ -18,19 +18,41 @@ from snowflake.snowpark.context import get_active_session
 
 logger = logging.getLogger("crypto-dashboard")
 session = get_active_session()
-st.set_page_config(page_title="Crypto Real-Time", layout="wide")
+st.set_page_config(page_title="Crypto Real-Time", page_icon="📈", layout="wide")
 
 MARTS = "ANALYTICS.PUBLIC_MARTS"
 STG = "ANALYTICS.PUBLIC_STAGING"
 MON = "ANALYTICS.MONITORING"
-UP, DOWN = "#26a69a", "#ef5350"   # vert / rouge bougies
-# --- Acces donnees : caches 10 s (1er poste de cout), requetes PARAMETREES ----
-# _session prefixe par '_' => non hashe par le cache (le symbole est la cle de cache).
+UP, DOWN = "#16a34a", "#ef4444"   # vert / rouge (lisibles sur fond clair)
+ACCENT = "#1e3a8a"                # navy, accorde au theme
+GRID, AXIS, REF = "#e9eef5", "#64748b", "#cbd5e1"
+
+
+def _style(chart, height=300):
+    """Style commun des graphes : axes epures, pas de cadre, grille claire, legende en haut."""
+    return (
+        chart.properties(height=height)
+        .configure_view(stroke=None)
+        .configure_axis(
+            grid=True, gridColor=GRID, domain=False, tickColor=GRID,
+            labelColor=AXIS, titleColor=AXIS, labelFontSize=11,
+            titleFontSize=11, titleFontWeight="normal",
+        )
+        .configure_legend(labelColor=AXIS, titleColor=AXIS, labelFontSize=11, orient="top")
+    )
+
+
+def _tmin(title="min"):
+    return alt.Tooltip("MINUTE:T", format="%H:%M", title=title)
+
+
+# --- Acces donnees : caches 10 s, requetes PARAMETREES (_session non hashe) -----
 @st.cache_data(ttl=10)
 def load_symbols(_session):
     return [r[0] for r in _session.sql(
         f"SELECT DISTINCT symbol FROM {MARTS}.VW_OHLCV_1MIN_LIVE ORDER BY symbol"
     ).collect()]
+
 
 @st.cache_data(ttl=10)
 def load_ohlcv(_session, symbol):
@@ -76,8 +98,6 @@ def load_slo(_session):
                ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (
                      ORDER BY DATEDIFF('ms', traded_at, ingest_time)) / 1000.0, 3) AS p95_s,
                ROUND(COUNT(*) / 300.0, 1) AS trades_per_s,
-               -- Fraicheur lue DIRECT sur RAW (un MAX(ingest_time) n'a pas besoin du dedup
-               -- QUALIFY de stg_trades) -> moins cher.
                (SELECT DATEDIFF('second', MAX(ingest_time), SYSDATE())
                 FROM RAW.CRYPTO.RAW_TRADES) AS freshness_s
         FROM {STG}.STG_TRADES
@@ -106,8 +126,7 @@ def load_anomalies(_session, symbol):
 @st.cache_data(ttl=10)
 def load_cvd(_session, symbol):
     # CVD = Cumulative Volume Delta. Taker = l'agresseur :
-    #   is_buyer_market_maker = TRUE  -> l'acheteur est passif -> taker SELL
-    #   is_buyer_market_maker = FALSE -> l'acheteur est l'agresseur -> taker BUY
+    #   is_buyer_market_maker = TRUE  -> acheteur passif -> taker SELL ; FALSE -> taker BUY.
     return _session.sql(f"""
         with per_min as (
             select time_slice(traded_at, 1, 'MINUTE') as minute,
@@ -118,16 +137,14 @@ def load_cvd(_session, symbol):
             group by 1
         )
         select minute, taker_buy, taker_sell,
-               (taker_buy - taker_sell)                       as delta,
+               (taker_buy - taker_sell)                           as delta,
                sum(taker_buy - taker_sell) over (order by minute) as cvd
-        from per_min
-        order by minute
+        from per_min order by minute
     """, params=[symbol]).to_pandas()
 
 
 @st.cache_data(ttl=10)
 def load_orderbook_levels(_session, symbol):
-    # Dernier snapshot du carnet (max last_update_id) -> niveaux bid/ask.
     return _session.sql(f"""
         with latest as (
             select side, price, qty, level
@@ -136,14 +153,12 @@ def load_orderbook_levels(_session, symbol):
             qualify last_update_id = max(last_update_id) over (partition by symbol)
         )
         select side, level, price::float as price, qty::float as qty
-        from latest
-        order by price
+        from latest order by price
     """, params=[symbol]).to_pandas()
 
 
 @st.cache_data(ttl=10)
 def load_cross_perf(_session):
-    # Performance normalisee base 100 par symbole, sur la fenetre live.
     return _session.sql(f"""
         with b as (
             select symbol, minute, close,
@@ -151,60 +166,88 @@ def load_cross_perf(_session):
             from {MARTS}.VW_OHLCV_1MIN_LIVE
         )
         select symbol, minute, (close / nullif(first_close, 0) * 100)::float as perf_100
-        from b
-        order by minute
+        from b order by minute
     """).to_pandas()
 
 
-# --- En-tete (hors fragment : la selection ne doit pas etre auto-rafraichie) --
-st.title("Crypto Real-Time - Snowflake + dbt")
-symbols = load_symbols(session)
-st.selectbox("Symbole", symbols or ["BTCUSDT"], key="symbol")
-st.caption("Rafraichissement auto toutes les 10 s (vues live calculees a la lecture, en cache 10 s).")
+def current_symbol():
+    return st.session_state.get("symbol") or "BTCUSDT"
+
+
+# =========================== PAGES ===========================
+@st.fragment(run_every=10)
+def page_home():
+    sym = current_symbol()
+    st.title("Crypto Real-Time")
+    st.caption(
+        "Pipeline temps reel : Binance -> Snowpipe Streaming -> dbt (medallion) -> "
+        "detection d'anomalies Cortex ML. 100% Snowflake."
+    )
+    ohlcv, metrics, slo = load_ohlcv(session, sym), load_metrics(session, sym), load_slo(session)
+    c1, c2, c3, c4 = st.columns(4)
+    close = ohlcv["CLOSE"].iloc[-1] if not ohlcv.empty else None
+    c1.metric(f"{sym} - prix", "-" if close is None else f"{close:.2f}")
+    rsi = metrics["RSI_14"].iloc[-1] if not metrics.empty else None
+    c2.metric("RSI 14", "warm-up" if (rsi is None or pd.isna(rsi)) else f"{rsi:.1f}")
+    if not slo.empty:
+        s = slo.iloc[0]
+        c3.metric("Latence p95 (s)", "-" if pd.isna(s["P95_S"]) else s["P95_S"])
+        c4.metric("Fraicheur (s)", "-" if pd.isna(s["FRESHNESS_S"]) else int(s["FRESHNESS_S"]))
+
+    if not ohlcv.empty:
+        spark = alt.Chart(ohlcv).mark_line(interpolate="monotone", color=ACCENT, strokeWidth=2).encode(
+            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
+            y=alt.Y("CLOSE:Q", scale=alt.Scale(zero=False), title=None),
+            tooltip=[_tmin(), alt.Tooltip("CLOSE:Q", format=".2f")],
+        )
+        st.altair_chart(_style(spark, 240), theme=None, width="stretch")
+
+    st.divider()
+    st.markdown(
+        "**Navigation** (sidebar a gauche) :\n"
+        "- **Prix & carnet** : bougies OHLC, volume, order book, RSI/volatilite\n"
+        "- **Microstructure** : CVD (flux taker) + ladder du carnet\n"
+        "- **Cross-symbole** : performance base 100 + correlations\n"
+        "- **Surveillance** : anomalies de volume (Cortex ML)\n"
+        "- **Sante pipeline** : SLO (latence, debit) + journal des evenements"
+    )
 
 
 @st.fragment(run_every=10)
-def live_dashboard():
-    symbol = st.session_state.get("symbol") or (symbols[0] if symbols else "BTCUSDT")
-
+def page_prix():
+    sym = current_symbol()
+    st.header(f"Prix & carnet - {sym}")
     col1, col2 = st.columns([2, 1])
-
-    # --- Prix : bougies OHLC + volume colore ---
     with col1:
-        st.subheader(f"OHLCV 1 min - {symbol}")
-        ohlcv = load_ohlcv(session, symbol)
+        ohlcv = load_ohlcv(session, sym)
         if ohlcv.empty:
             st.info("Pas de donnees recentes pour ce symbole.")
         else:
             up_down = alt.condition("datum.OPEN <= datum.CLOSE", alt.value(UP), alt.value(DOWN))
+            tip = [_tmin(), alt.Tooltip("OPEN:Q", format=".2f"), alt.Tooltip("HIGH:Q", format=".2f"),
+                   alt.Tooltip("LOW:Q", format=".2f"), alt.Tooltip("CLOSE:Q", format=".2f"),
+                   alt.Tooltip("VOLUME:Q", format=".2f")]
             base = alt.Chart(ohlcv).encode(
-                x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
-                color=up_down,
-            )
+                x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)), color=up_down)
             wick = base.mark_rule().encode(
                 y=alt.Y("LOW:Q", scale=alt.Scale(zero=False), title="prix"), y2="HIGH:Q")
-            body = base.mark_bar(size=5).encode(y="OPEN:Q", y2="CLOSE:Q")
-            st.altair_chart((wick + body).properties(height=320), width="stretch")
+            body = base.mark_bar(size=6).encode(y="OPEN:Q", y2="CLOSE:Q", tooltip=tip)
+            st.altair_chart(_style(wick + body, 340), theme=None, width="stretch")
             vol = alt.Chart(ohlcv).mark_bar().encode(
                 x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
-                y=alt.Y("VOLUME:Q", title="volume"),
-                color=up_down,
-            ).properties(height=130)
-            st.altair_chart(vol, width="stretch")
-
-    # --- Order book + indicateurs (RSI / volatilite, deja calcules par le mart) ---
+                y=alt.Y("VOLUME:Q", title="volume"), color=up_down, tooltip=tip)
+            st.altair_chart(_style(vol, 130), theme=None, width="stretch")
     with col2:
         st.subheader("Order book (live)")
-        ob = load_orderbook(session, symbol)
+        ob = load_orderbook(session, sym)
         if not ob.empty:
             r = ob.iloc[0]
             st.metric("Mid", f"{r['MID']:.2f}")
             st.metric("Spread (bps)", f"{r['SPREAD_BPS']:.2f}")
             st.metric("Imbalance", f"{r['IMBALANCE']:.2%}")
             st.metric("Microprice", f"{r['MICROPRICE']:.2f}")
-
         st.subheader("Indicateurs")
-        metrics = load_metrics(session, symbol)
+        metrics = load_metrics(session, sym)
         if metrics.empty:
             st.info("Indicateurs indisponibles.")
         else:
@@ -214,92 +257,116 @@ def live_dashboard():
             st.metric("Volatilite realisee", "-" if pd.isna(vol_r) else f"{vol_r:.4f}")
             st.metric("Variation 5 min", "-" if pd.isna(chg) else f"{chg:+.2f}%")
 
-    # --- RSI dans le temps avec bandes 30 / 70 ---
+    metrics = load_metrics(session, sym)
     if not metrics.empty and metrics["RSI_14"].notna().any():
-        rsi_line = alt.Chart(metrics).mark_line().encode(
+        st.subheader("RSI 14 (Wilder)")
+        rsi_line = alt.Chart(metrics).mark_line(interpolate="monotone", color=ACCENT, strokeWidth=2).encode(
             x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
             y=alt.Y("RSI_14:Q", scale=alt.Scale(domain=[0, 100]), title="RSI 14"),
-        )
-        b70 = alt.Chart(metrics).mark_rule(strokeDash=[4, 4], color="gray").encode(y=alt.datum(70))
-        b30 = alt.Chart(metrics).mark_rule(strokeDash=[4, 4], color="gray").encode(y=alt.datum(30))
-        st.altair_chart((rsi_line + b70 + b30).properties(height=180), width="stretch")
+            tooltip=[_tmin(), alt.Tooltip("RSI_14:Q", format=".1f")])
+        b70 = alt.Chart(metrics).mark_rule(strokeDash=[4, 4], color=REF).encode(y=alt.datum(70))
+        b30 = alt.Chart(metrics).mark_rule(strokeDash=[4, 4], color=REF).encode(y=alt.datum(30))
+        st.altair_chart(_style(rsi_line + b70 + b30, 180), theme=None, width="stretch")
 
-    # --- Flux taker : CVD (Cumulative Volume Delta) ---
-    cvd = load_cvd(session, symbol)
-    if not cvd.empty:
-        st.subheader("Flux taker - CVD (Cumulative Volume Delta)")
-        st.caption("CVD > 0 = pression acheteuse nette depuis le debut de la fenetre.")
-        cvd_area = alt.Chart(cvd).mark_area(opacity=0.4, line=True, color="#42a5f5").encode(
+    st.subheader("Top movers (5 min)")
+    st.dataframe(load_movers(session), width="stretch")
+
+
+@st.fragment(run_every=10)
+def page_micro():
+    sym = current_symbol()
+    st.header(f"Microstructure - {sym}")
+
+    st.subheader("Flux taker - CVD (Cumulative Volume Delta)")
+    st.caption("CVD > 0 = pression acheteuse nette depuis le debut de la fenetre.")
+    cvd = load_cvd(session, sym)
+    if cvd.empty:
+        st.info("Pas de trades recents.")
+    else:
+        cvd_area = alt.Chart(cvd).mark_area(
+            interpolate="monotone", line={"color": ACCENT, "strokeWidth": 2}, opacity=0.5,
+            color=alt.Gradient(gradient="linear", x1=1, x2=1, y1=1, y2=0, stops=[
+                alt.GradientStop(color="white", offset=0), alt.GradientStop(color=ACCENT, offset=1)]),
+        ).encode(
             x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
             y=alt.Y("CVD:Q", title="CVD (cumul buy - sell)"),
-        )
-        zero = alt.Chart(cvd).mark_rule(strokeDash=[4, 4], color="gray").encode(y=alt.datum(0))
-        st.altair_chart((cvd_area + zero).properties(height=200), width="stretch")
-
+            tooltip=[_tmin(), alt.Tooltip("CVD:Q", format=".2f")])
+        zero = alt.Chart(cvd).mark_rule(strokeDash=[4, 4], color=REF).encode(y=alt.datum(0))
+        st.altair_chart(_style(cvd_area + zero, 220), theme=None, width="stretch")
         delta_bars = alt.Chart(cvd).mark_bar().encode(
             x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
             y=alt.Y("DELTA:Q", title="delta / min"),
             color=alt.condition("datum.DELTA >= 0", alt.value(UP), alt.value(DOWN)),
-        ).properties(height=120)
-        st.altair_chart(delta_bars, width="stretch")
+            tooltip=[_tmin(), alt.Tooltip("DELTA:Q", format=".2f")])
+        st.altair_chart(_style(delta_bars, 120), theme=None, width="stretch")
 
-    # --- Carnet d'ordres (ladder) ---
-    levels = load_orderbook_levels(session, symbol)
-    if not levels.empty:
-        st.subheader("Carnet d'ordres - ladder (dernier snapshot)")
+    st.subheader("Carnet d'ordres - ladder (dernier snapshot)")
+    levels = load_orderbook_levels(session, sym)
+    if levels.empty:
+        st.info("Pas de snapshot de carnet recent.")
+    else:
         ladder = alt.Chart(levels).mark_bar().encode(
             y=alt.Y("PRICE:O", sort="descending", title="prix"),
             x=alt.X("QTY:Q", title="quantite"),
             color=alt.Color("SIDE:N", title=None,
                             scale=alt.Scale(domain=["bid", "ask"], range=[UP, DOWN])),
-        ).properties(height=420)
-        st.altair_chart(ladder, width="stretch")
+            tooltip=[alt.Tooltip("SIDE:N"), alt.Tooltip("PRICE:Q", format=".2f"),
+                     alt.Tooltip("QTY:Q", format=".4f")])
+        st.altair_chart(_style(ladder, 440), theme=None, width="stretch")
 
-    # --- Cross-symbole : perf base 100 + correlation des log-returns ---
+
+@st.fragment(run_every=10)
+def page_cross():
+    st.header("Cross-symbole")
     xperf = load_cross_perf(session)
-    if not xperf.empty:
-        st.divider()
-        st.subheader("Cross-symbole - performance normalisee (base 100)")
-        lines = alt.Chart(xperf).mark_line().encode(
-            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
-            y=alt.Y("PERF_100:Q", scale=alt.Scale(zero=False), title="base 100"),
-            color=alt.Color("SYMBOL:N", title=None),
-        ).properties(height=240)
-        st.altair_chart(lines, width="stretch")
+    if xperf.empty:
+        st.info("Pas de donnees.")
+        return
+    st.subheader("Performance normalisee (base 100)")
+    lines = alt.Chart(xperf).mark_line(interpolate="monotone", strokeWidth=2).encode(
+        x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
+        y=alt.Y("PERF_100:Q", scale=alt.Scale(zero=False), title="base 100"),
+        color=alt.Color("SYMBOL:N", title=None),
+        tooltip=[alt.Tooltip("SYMBOL:N"), _tmin(), alt.Tooltip("PERF_100:Q", format=".1f")])
+    st.altair_chart(_style(lines, 280), theme=None, width="stretch")
 
-        piv = xperf.pivot(index="MINUTE", columns="SYMBOL", values="PERF_100")
-        corr = np.log(piv / piv.shift(1)).corr().round(2)
-        if not corr.empty:
-            st.caption("Correlation des log-returns")
-            st.dataframe(corr, width="stretch")
+    piv = xperf.pivot(index="MINUTE", columns="SYMBOL", values="PERF_100")
+    corr = np.log(piv / piv.shift(1)).corr().round(2)
+    if not corr.empty:
+        st.subheader("Correlation des log-returns")
+        st.dataframe(corr, width="stretch")
 
-    # --- Top movers ---
-    st.subheader("Top movers (5 min)")
-    st.dataframe(load_movers(session), width="stretch")
-    # --- Surveillance : anomalies de volume (Cortex ML) ---
-    st.divider()
-    st.subheader("Surveillance - anomalies de volume (modele Cortex ML)")
+
+@st.fragment(run_every=10)
+def page_surveillance():
+    sym = current_symbol()
+    st.header(f"Surveillance - anomalies de volume (Cortex ML) - {sym}")
     try:
-        anom = load_anomalies(session, symbol)
+        anom = load_anomalies(session, sym)
         if anom.empty:
             st.info("Aucune donnee scoree (couche ML non deployee ou pas de scoring recent).")
-        else:
-            flagged = anom[anom["IS_ANOMALY"]]
-            st.metric("Anomalies (2 h)", len(flagged))
-            band = alt.Chart(anom).mark_area(opacity=0.15).encode(
-                x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
-                y=alt.Y("LOWER_BOUND:Q", title="volume"), y2="UPPER_BOUND:Q")
-            line = alt.Chart(anom).mark_line().encode(
-                x="MINUTE:T", y=alt.Y("VOLUME:Q", scale=alt.Scale(zero=False)))
-            pts = alt.Chart(flagged).mark_point(color="red", size=90, filled=True).encode(
-                x="MINUTE:T", y="VOLUME:Q")
-            st.altair_chart((band + line + pts).properties(height=240), width="stretch")
-    except Exception as exc:  # couche optionnelle : on logue la vraie erreur, on n'echoue pas l'app
+            return
+        flagged = anom[anom["IS_ANOMALY"]]
+        st.metric("Anomalies (2 h)", len(flagged))
+        band = alt.Chart(anom).mark_area(opacity=0.12, color=ACCENT).encode(
+            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
+            y=alt.Y("LOWER_BOUND:Q", title="volume"), y2="UPPER_BOUND:Q")
+        line = alt.Chart(anom).mark_line(interpolate="monotone", color=ACCENT, strokeWidth=2).encode(
+            x="MINUTE:T", y=alt.Y("VOLUME:Q", scale=alt.Scale(zero=False)),
+            tooltip=[_tmin(), alt.Tooltip("VOLUME:Q", format=".2f")])
+        pts = alt.Chart(flagged).mark_point(color=DOWN, size=80, filled=True).encode(
+            x="MINUTE:T", y="VOLUME:Q",
+            tooltip=[_tmin(), alt.Tooltip("VOLUME:Q", format=".2f")])
+        st.altair_chart(_style(band + line + pts, 300), theme=None, width="stretch")
+        st.caption("Bande = plage attendue ; points rouges = volume hors norme (modele entraine).")
+    except Exception as exc:
         logger.warning("panneau anomalies indisponible: %s", exc)
         st.info("Couche surveillance non deployee (snowflake/07_ml_anomaly.sql).")
-    # --- SLO / sante du pipeline ---
-    st.divider()
-    st.subheader("SLO / sante du pipeline")
+
+
+@st.fragment(run_every=10)
+def page_sante():
+    st.header("Sante du pipeline")
     try:
         slo = load_slo(session)
         if not slo.empty:
@@ -318,8 +385,28 @@ def live_dashboard():
     try:
         events = load_events(session)
         if not events.empty:
-            st.caption("Derniers evenements (alertes fraicheur / anomalies / tests)")
+            st.subheader("Derniers evenements")
+            st.caption("Alertes fraicheur / anomalies / echecs de tests")
             st.dataframe(events, width="stretch")
     except Exception as exc:
         logger.warning("journal pipeline_log indisponible: %s", exc)
-live_dashboard()
+
+
+# =========================== NAVIGATION ===========================
+nav = st.navigation([
+    st.Page(page_home, title="Accueil", icon="🏠", default=True),
+    st.Page(page_prix, title="Prix & carnet", icon="📈"),
+    st.Page(page_micro, title="Microstructure", icon="🌊"),
+    st.Page(page_cross, title="Cross-symbole", icon="🔀"),
+    st.Page(page_surveillance, title="Surveillance", icon="🚨"),
+    st.Page(page_sante, title="Sante pipeline", icon="❤️"),
+], position="sidebar")
+
+# Filtre symbole partage (sidebar) -> applique a toutes les pages via session_state
+with st.sidebar:
+    st.markdown("### Filtre")
+    _symbols = load_symbols(session)
+    st.selectbox("Symbole", _symbols or ["BTCUSDT"], key="symbol")
+    st.caption("Rafraichissement auto : 10 s")
+
+nav.run()
