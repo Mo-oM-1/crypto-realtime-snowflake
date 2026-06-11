@@ -12,6 +12,7 @@ Necessite Streamlit >= 1.37 (st.fragment / run_every).
 import logging
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 from snowflake.snowpark.context import get_active_session
@@ -106,6 +107,59 @@ def load_anomalies(_session, symbol):
     ).to_pandas()
 
 
+@st.cache_data(ttl=10)
+def load_cvd(_session, symbol):
+    # CVD = Cumulative Volume Delta. Taker = l'agresseur :
+    #   is_buyer_market_maker = TRUE  -> l'acheteur est passif -> taker SELL
+    #   is_buyer_market_maker = FALSE -> l'acheteur est l'agresseur -> taker BUY
+    return _session.sql(f"""
+        with per_min as (
+            select time_slice(traded_at, 1, 'MINUTE') as minute,
+                   sum(case when not is_buyer_market_maker then quantity else 0 end) as taker_buy,
+                   sum(case when     is_buyer_market_maker then quantity else 0 end) as taker_sell
+            from {STG}.STG_TRADES
+            where symbol = ? and traded_at >= dateadd('minute', -120, sysdate())
+            group by 1
+        )
+        select minute, taker_buy, taker_sell,
+               (taker_buy - taker_sell)                       as delta,
+               sum(taker_buy - taker_sell) over (order by minute) as cvd
+        from per_min
+        order by minute
+    """, params=[symbol]).to_pandas()
+
+
+@st.cache_data(ttl=10)
+def load_orderbook_levels(_session, symbol):
+    # Dernier snapshot du carnet (max last_update_id) -> niveaux bid/ask.
+    return _session.sql(f"""
+        with latest as (
+            select side, price, qty, level
+            from {STG}.STG_DEPTH_LEVELS
+            where symbol = ? and ingest_time >= dateadd('minute', -120, sysdate())
+            qualify last_update_id = max(last_update_id) over (partition by symbol)
+        )
+        select side, level, price::float as price, qty::float as qty
+        from latest
+        order by price
+    """, params=[symbol]).to_pandas()
+
+
+@st.cache_data(ttl=10)
+def load_cross_perf(_session):
+    # Performance normalisee base 100 par symbole, sur la fenetre live.
+    return _session.sql(f"""
+        with b as (
+            select symbol, minute, close,
+                   first_value(close) over (partition by symbol order by minute) as first_close
+            from {MARTS}.VW_OHLCV_1MIN_LIVE
+        )
+        select symbol, minute, (close / nullif(first_close, 0) * 100)::float as perf_100
+        from b
+        order by minute
+    """).to_pandas()
+
+
 # --- En-tete (hors fragment : la selection ne doit pas etre auto-rafraichie) --
 st.title("Crypto Real-Time - Snowflake + dbt")
 symbols = load_symbols(session)
@@ -174,6 +228,55 @@ def live_dashboard():
         b70 = alt.Chart(metrics).mark_rule(strokeDash=[4, 4], color="gray").encode(y=alt.datum(70))
         b30 = alt.Chart(metrics).mark_rule(strokeDash=[4, 4], color="gray").encode(y=alt.datum(30))
         st.altair_chart((rsi_line + b70 + b30).properties(height=180), width="stretch")
+
+    # --- Flux taker : CVD (Cumulative Volume Delta) ---
+    cvd = load_cvd(session, symbol)
+    if not cvd.empty:
+        st.subheader("Flux taker - CVD (Cumulative Volume Delta)")
+        st.caption("CVD > 0 = pression acheteuse nette depuis le debut de la fenetre.")
+        cvd_area = alt.Chart(cvd).mark_area(opacity=0.4, line=True, color="#42a5f5").encode(
+            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
+            y=alt.Y("CVD:Q", title="CVD (cumul buy - sell)"),
+        )
+        zero = alt.Chart(cvd).mark_rule(strokeDash=[4, 4], color="gray").encode(y=alt.datum(0))
+        st.altair_chart((cvd_area + zero).properties(height=200), width="stretch")
+
+        delta_bars = alt.Chart(cvd).mark_bar().encode(
+            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
+            y=alt.Y("DELTA:Q", title="delta / min"),
+            color=alt.condition("datum.DELTA >= 0", alt.value(UP), alt.value(DOWN)),
+        ).properties(height=120)
+        st.altair_chart(delta_bars, width="stretch")
+
+    # --- Carnet d'ordres (ladder) ---
+    levels = load_orderbook_levels(session, symbol)
+    if not levels.empty:
+        st.subheader("Carnet d'ordres - ladder (dernier snapshot)")
+        ladder = alt.Chart(levels).mark_bar().encode(
+            y=alt.Y("PRICE:O", sort="descending", title="prix"),
+            x=alt.X("QTY:Q", title="quantite"),
+            color=alt.Color("SIDE:N", title=None,
+                            scale=alt.Scale(domain=["bid", "ask"], range=[UP, DOWN])),
+        ).properties(height=420)
+        st.altair_chart(ladder, width="stretch")
+
+    # --- Cross-symbole : perf base 100 + correlation des log-returns ---
+    xperf = load_cross_perf(session)
+    if not xperf.empty:
+        st.divider()
+        st.subheader("Cross-symbole - performance normalisee (base 100)")
+        lines = alt.Chart(xperf).mark_line().encode(
+            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
+            y=alt.Y("PERF_100:Q", scale=alt.Scale(zero=False), title="base 100"),
+            color=alt.Color("SYMBOL:N", title=None),
+        ).properties(height=240)
+        st.altair_chart(lines, width="stretch")
+
+        piv = xperf.pivot(index="MINUTE", columns="SYMBOL", values="PERF_100")
+        corr = np.log(piv / piv.shift(1)).corr().round(2)
+        if not corr.empty:
+            st.caption("Correlation des log-returns")
+            st.dataframe(corr, width="stretch")
 
     # --- Top movers ---
     st.subheader("Top movers (5 min)")
