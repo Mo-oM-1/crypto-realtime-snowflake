@@ -175,41 +175,30 @@ def current_symbol():
 
 
 # =========================== PAGES ===========================
-@st.fragment(run_every=10)
 def page_home():
-    sym = current_symbol()
-    st.title("Crypto Real-Time")
-    st.caption(
-        "Pipeline temps reel : Binance -> Snowpipe Streaming -> dbt (medallion) -> "
-        "detection d'anomalies Cortex ML. 100% Snowflake."
+    # Page d'accueil epuree : un titre + un visuel (graphe en aire, SVG inline).
+    svg = (
+        '<svg width="440" height="190" viewBox="0 0 440 190" xmlns="http://www.w3.org/2000/svg">'
+        '<defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1">'
+        '<stop offset="0%" stop-color="#1e3a8a" stop-opacity="0.35"/>'
+        '<stop offset="100%" stop-color="#1e3a8a" stop-opacity="0"/></linearGradient></defs>'
+        '<path d="M0,150 L62,128 L124,138 L186,96 L248,108 L310,58 L372,74 L430,30 '
+        'L430,190 L0,190 Z" fill="url(#g)"/>'
+        '<path d="M0,150 L62,128 L124,138 L186,96 L248,108 L310,58 L372,74 L430,30" '
+        'fill="none" stroke="#1e3a8a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>'
+        '<circle cx="430" cy="30" r="5" fill="#1e3a8a"/></svg>'
     )
-    ohlcv, metrics, slo = load_ohlcv(session, sym), load_metrics(session, sym), load_slo(session)
-    c1, c2, c3, c4 = st.columns(4)
-    close = ohlcv["CLOSE"].iloc[-1] if not ohlcv.empty else None
-    c1.metric(f"{sym} - prix", "-" if close is None else f"{close:.2f}")
-    rsi = metrics["RSI_14"].iloc[-1] if not metrics.empty else None
-    c2.metric("RSI 14", "warm-up" if (rsi is None or pd.isna(rsi)) else f"{rsi:.1f}")
-    if not slo.empty:
-        s = slo.iloc[0]
-        c3.metric("Latence p95 (s)", "-" if pd.isna(s["P95_S"]) else s["P95_S"])
-        c4.metric("Fraicheur (s)", "-" if pd.isna(s["FRESHNESS_S"]) else int(s["FRESHNESS_S"]))
-
-    if not ohlcv.empty:
-        spark = alt.Chart(ohlcv).mark_line(interpolate="monotone", color=ACCENT, strokeWidth=2).encode(
-            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
-            y=alt.Y("CLOSE:Q", scale=alt.Scale(zero=False), title=None),
-            tooltip=[_tmin(), alt.Tooltip("CLOSE:Q", format=".2f")],
-        )
-        st.altair_chart(_style(spark, 240), theme=None, width="stretch")
-
-    st.divider()
     st.markdown(
-        "**Navigation** (sidebar a gauche) :\n"
-        "- **Prix & carnet** : bougies OHLC, volume, order book, RSI/volatilite\n"
-        "- **Microstructure** : CVD (flux taker) + ladder du carnet\n"
-        "- **Cross-symbole** : performance base 100 + correlations\n"
-        "- **Surveillance** : anomalies de volume (Cortex ML)\n"
-        "- **Sante pipeline** : SLO (latence, debit) + journal des evenements"
+        f"""
+        <div style="text-align:center; padding-top:4rem">
+          <h1 style="font-size:3.2rem; margin:0">Crypto Real-Time</h1>
+          <p style="color:#64748b; font-size:1.1rem; margin:0.3rem 0 0">
+            Snowflake &middot; dbt &middot; Cortex ML
+          </p>
+          <div style="margin-top:2.5rem">{svg}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
