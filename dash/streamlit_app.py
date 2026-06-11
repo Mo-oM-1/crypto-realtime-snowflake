@@ -175,42 +175,90 @@ def current_symbol():
 
 
 # =========================== PAGES ===========================
-@st.fragment(run_every=10)
 def page_home():
-    sym = current_symbol()
-    st.title("Crypto Real-Time")
-    st.caption(
-        "Pipeline temps reel : Binance -> Snowpipe Streaming -> dbt (medallion) -> "
-        "detection d'anomalies Cortex ML. 100% Snowflake."
+    # Page d'accueil epuree : un titre + un visuel (graphe en aire, SVG inline).
+    svg = (
+        '<svg width="440" height="190" viewBox="0 0 440 190" xmlns="http://www.w3.org/2000/svg">'
+        '<defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1">'
+        '<stop offset="0%" stop-color="#1e3a8a" stop-opacity="0.35"/>'
+        '<stop offset="100%" stop-color="#1e3a8a" stop-opacity="0"/></linearGradient></defs>'
+        '<path d="M0,150 L62,128 L124,138 L186,96 L248,108 L310,58 L372,74 L430,30 '
+        'L430,190 L0,190 Z" fill="url(#g)"/>'
+        '<path d="M0,150 L62,128 L124,138 L186,96 L248,108 L310,58 L372,74 L430,30" '
+        'fill="none" stroke="#1e3a8a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>'
+        '<circle cx="430" cy="30" r="5" fill="#1e3a8a"/></svg>'
     )
-    ohlcv, metrics, slo = load_ohlcv(session, sym), load_metrics(session, sym), load_slo(session)
-    c1, c2, c3, c4 = st.columns(4)
+    st.markdown(
+        f"""
+        <div style="text-align:center; padding-top:4rem">
+          <h1 style="font-size:3.2rem; margin:0">Crypto Real-Time</h1>
+          <p style="color:#64748b; font-size:1.1rem; margin:0.3rem 0 0">
+            Snowflake &middot; dbt &middot; Cortex ML
+          </p>
+          <div style="margin-top:2.5rem">{svg}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+@st.fragment(run_every=10)
+def page_trader():
+    # Vue RETAIL : traduit le flux d'ordres en langage simple (pression, RSI, volume).
+    sym = current_symbol()
+    st.header(f"Vue trader - {sym}")
+    st.caption(
+        "Lecture simplifiee du flux d'ordres. Detail sur Microstructure / Prix & carnet. "
+        "Contexte, pas un conseil."
+    )
+    ohlcv, cvd, movers = load_ohlcv(session, sym), load_cvd(session, sym), load_movers(session)
+    row = movers[movers["SYMBOL"] == sym]
     close = ohlcv["CLOSE"].iloc[-1] if not ohlcv.empty else None
-    c1.metric(f"{sym} - prix", "-" if close is None else f"{close:.2f}")
-    rsi = metrics["RSI_14"].iloc[-1] if not metrics.empty else None
-    c2.metric("RSI 14", "warm-up" if (rsi is None or pd.isna(rsi)) else f"{rsi:.1f}")
-    if not slo.empty:
-        s = slo.iloc[0]
-        c3.metric("Latence p95 (s)", "-" if pd.isna(s["P95_S"]) else s["P95_S"])
-        c4.metric("Fraicheur (s)", "-" if pd.isna(s["FRESHNESS_S"]) else int(s["FRESHNESS_S"]))
+    chg5 = row["PRICE_CHANGE_PCT_5MIN"].iloc[0] if not row.empty else None
+    rsi = row["RSI_14"].iloc[0] if not row.empty else None
+    vol_anom = bool(row["IS_VOLUME_ANOMALY"].iloc[0]) if not row.empty else False
+    recent_delta = float(cvd["DELTA"].tail(10).sum()) if not cvd.empty else 0.0
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Prix", "-" if close is None else f"{close:.2f}",
+              None if (chg5 is None or pd.isna(chg5)) else f"{chg5:+.2f}% / 5min")
+    pression = "Acheteurs" if recent_delta > 0 else "Vendeurs" if recent_delta < 0 else "Equilibre"
+    c2.metric("Pression (10 min)", pression)
+    if rsi is None or pd.isna(rsi):
+        rsi_txt, rsi_val = "warm-up", None
+    elif rsi >= 70:
+        rsi_txt, rsi_val = "Surachat", f"{rsi:.0f}"
+    elif rsi <= 30:
+        rsi_txt, rsi_val = "Survente", f"{rsi:.0f}"
+    else:
+        rsi_txt, rsi_val = "Neutre", f"{rsi:.0f}"
+    c3.metric("RSI", rsi_txt, rsi_val)
+    c4.metric("Volume", "ANORMAL" if vol_anom else "Normal")
+
+    bits = []
+    if recent_delta > 0:
+        bits.append("les acheteurs poussent (CVD en hausse)")
+    elif recent_delta < 0:
+        bits.append("les vendeurs poussent (CVD en baisse)")
+    if rsi_txt == "Surachat":
+        bits.append("RSI en surachat (essoufflement haussier possible)")
+    elif rsi_txt == "Survente":
+        bits.append("RSI en survente (rebond possible)")
+    if vol_anom:
+        bits.append("volume anormal en cours (un gros acteur ?)")
+    verdict = "Lecture rapide : " + ("; ".join(bits) if bits else "marche calme, rien de notable") + "."
+    (st.success if recent_delta > 0 else st.error if recent_delta < 0 else st.info)(verdict)
 
     if not ohlcv.empty:
-        spark = alt.Chart(ohlcv).mark_line(interpolate="monotone", color=ACCENT, strokeWidth=2).encode(
-            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)),
-            y=alt.Y("CLOSE:Q", scale=alt.Scale(zero=False), title=None),
-            tooltip=[_tmin(), alt.Tooltip("CLOSE:Q", format=".2f")],
-        )
-        st.altair_chart(_style(spark, 240), theme=None, width="stretch")
-
-    st.divider()
-    st.markdown(
-        "**Navigation** (sidebar a gauche) :\n"
-        "- **Prix & carnet** : bougies OHLC, volume, order book, RSI/volatilite\n"
-        "- **Microstructure** : CVD (flux taker) + ladder du carnet\n"
-        "- **Cross-symbole** : performance base 100 + correlations\n"
-        "- **Surveillance** : anomalies de volume (Cortex ML)\n"
-        "- **Sante pipeline** : SLO (latence, debit) + journal des evenements"
-    )
+        up_down = alt.condition("datum.OPEN <= datum.CLOSE", alt.value(UP), alt.value(DOWN))
+        tip = [_tmin(), alt.Tooltip("OPEN:Q", format=".2f"), alt.Tooltip("HIGH:Q", format=".2f"),
+               alt.Tooltip("LOW:Q", format=".2f"), alt.Tooltip("CLOSE:Q", format=".2f")]
+        base = alt.Chart(ohlcv).encode(
+            x=alt.X("MINUTE:T", axis=alt.Axis(format="%H:%M", title=None)), color=up_down)
+        wick = base.mark_rule().encode(
+            y=alt.Y("LOW:Q", scale=alt.Scale(zero=False), title="prix"), y2="HIGH:Q")
+        body = base.mark_bar(size=6).encode(y="OPEN:Q", y2="CLOSE:Q", tooltip=tip)
+        st.altair_chart(_style(wick + body, 320), theme=None, width="stretch")
 
 
 @st.fragment(run_every=10)
@@ -395,6 +443,7 @@ def page_sante():
 # =========================== NAVIGATION ===========================
 nav = st.navigation([
     st.Page(page_home, title="Accueil", icon="🏠", default=True),
+    st.Page(page_trader, title="Vue trader", icon="🎯"),
     st.Page(page_prix, title="Prix & carnet", icon="📈"),
     st.Page(page_micro, title="Microstructure", icon="🌊"),
     st.Page(page_cross, title="Cross-symbole", icon="🔀"),
