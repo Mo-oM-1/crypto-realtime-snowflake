@@ -55,9 +55,9 @@ flowchart TB
             VOB["vw_orderbook_metrics_live"]
             VMM["vw_market_metrics_live"]
         end
-        subgraph GHS["Gold historique (Dynamic Tables, lag 1 min)"]
-            FOHLCV["fct_ohlcv_1min"]
-            FOBS["fct_orderbook_snapshots"]
+        subgraph GHS["Gold historique (incremental ; fct_orderbook = Dynamic Table)"]
+            FOHLCV["fct_ohlcv_1min<br/>(incremental)"]
+            FOBS["fct_orderbook_snapshots<br/>(Dynamic Table)"]
             DIM["dim_symbols (seed)"]
         end
     end
@@ -68,6 +68,9 @@ flowchart TB
     SLV -->|"realtime-marts"| GHS
     GLV --> DASH["Streamlit dashboard"]
     GLV --> OBS["Observabilité / SLO"]
+    FOHLCV -->|"Cortex ML"| ANOM["Détection anomalies<br/>(SNOWFLAKE.ML)"]
+    ANOM --> DASH
+    ANOM --> MAIL["Alerte email<br/>(SYSTEM$SEND_EMAIL)"]
 ```
 
 ### Gouvernance & orchestration
@@ -80,15 +83,20 @@ flowchart LR
         DRIFT["crypto_schema_drift_check<br/>Task - quotidien"]
         DTEST["crypto_dbt_test<br/>Task - horaire"]
         QCHK["crypto_quality_check<br/>Task - horaire"]
-        FRESH["crypto_freshness_alert<br/>Alert - 5 min"]
+        FRESH["crypto_freshness_alert<br/>Alert - 15 min"]
+        ANOM["crypto_anomaly_score / retrain<br/>Cortex ML - 30 min / horaire"]
     end
     LOG[("pipeline_log")]
+    MAIL["Notification email<br/>(SYSTEM$SEND_EMAIL)"]
     REM["Agents remédiation (revue humaine)<br/>check-schema-drift<br/>generate-quality-tests"]
     PIPE -->|"métriques & schéma"| DET
     DRIFT --> LOG
     DTEST --> LOG
     QCHK --> LOG
     FRESH --> LOG
+    ANOM --> LOG
+    FRESH --> MAIL
+    ANOM --> MAIL
     LOG -->|"signal"| REM
     REM -->|"corrige (revue)"| PIPE
     RM["Resource Monitor (FinOps)"] -.->|"cap credits"| PIPE
@@ -121,7 +129,8 @@ on **automatise la détection** (SQL planifié), la **remédiation reste agentiq
 |---|---|---|---|
 | Schéma | `crypto_schema_drift_check` (quotidien) | `pipeline_log` (DRIFT) | `check-schema-drift` |
 | Qualité | `crypto_dbt_test` (horaire) + `crypto_quality_check` | `pipeline_log` (TEST_FAILED) | `generate-quality-tests` / fix |
-| Fraîcheur | `crypto_freshness_alert` (5 min) | `pipeline_log` (STALE) | vérifier / relancer le consumer |
+| Fraîcheur | `crypto_freshness_alert` (15 min) | `pipeline_log` (STALE) + **email** | vérifier / relancer le consumer |
+| Anomalie volume | `crypto_anomaly_score` (30 min) + `crypto_anomaly_retrain` (horaire) | `MART_VOLUME_ANOMALIES` + **email** | revue dashboard (page Surveillance) |
 
 > **Gouvernance** : on ne « cron » pas l'agent. La détection est automatisée et **déclenche** une intervention agentique **validée par un humain avant commit** (anti « vibe coding »). Auto-réparation **assistée**, pas aveugle.
 
