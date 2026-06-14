@@ -204,6 +204,9 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 | `QUEUE_MAXSIZE` | `100000` | Taille de la file de découplage WS -> writer ; au-delà, perte explicite comptée (`dropped`) |
 | `BATCH_MAX_ROWS` | `5000` | Lignes max coalescées par micro-batch du writer |
 | `BATCH_MAX_SECONDS` | `1.0` | Borne temps d'un micro-batch (pas de latence ajoutée à faible charge) |
+| `HEALTHCHECK_PORT` | `8000` | Port du endpoint HTTP `GET /healthz` (liveness + fraîcheur) |
+| `HEALTH_MAX_SILENCE_S` | `30` | Silence max (s) sans message reçu avant l'état `stale` (consumer zombie) |
+| `HEALTH_GRACE_SECONDS` | `60` | Fenêtre de démarrage : l'absence de message est tolérée le temps de la 1re connexion |
 | `SNOWFLAKE_DATABASE` | `RAW` | Base cible de l'ingestion brute |
 | `SNOWFLAKE_SCHEMA` | `CRYPTO` | Schéma cible |
 | `SNOWFLAKE_PROFILE_JSON` | `profile.json` | Chemin du profil key-pair (jamais commité) |
@@ -228,7 +231,7 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 ├── ingestion/                    # consumer temps reel (ingestion brute, NE flatten pas)
 │   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> file bornee -> Snowpipe Streaming -> RAW VARIANT
 │   ├── requirements.txt / Dockerfile / profile.json.example
-│   └── tests/test_consumer.py    #   tests unitaires consumer (pytest) : routage, backpressure, horodatage
+│   └── tests/test_consumer.py    #   tests unitaires consumer (pytest) : routage, backpressure, horodatage, healthcheck
 ├── .cortex/skills/               # skills Cortex Code
 │   ├── flatten-variant/          #   build (structure + doc + tests de cles)
 │   ├── check-schema-drift/       #   self-healing
@@ -254,14 +257,28 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 - **Monitoring automatisé** (`03_alerts.sql`) : alerte de fraîcheur + tests dbt horaires (schéma `ANALYTICS.MONITORING`).
 - **Rafraîchissement continu** : Snowpipe Streaming + Dynamic Tables (`target_lag='1 minute'`), pas de cron dans le chemin critique.
 - **Rétention RAW** (`08_raw_retention.sql`) : purge quotidienne de RAW > 7 jours. RAW est un **buffer** ; l'historique long terme vit dans les marts incrémentaux (`ANALYTICS`). Borne le volume scanné par le dedup de `stg_trades` (sinon le scan grossit sans fin).
-- **Hébergement 24/7** du consumer via Docker :
+- **Healthcheck du consumer** (`GET /healthz`) : un process peut être *vivant mais zombie* (socket Binance mort, plus rien n'entre). L'endpoint vérifie la **fraîcheur** (a-t-on reçu un message dans les `HEALTH_MAX_SILENCE_S` dernières secondes ?) et renvoie `200` si sain, `503` sinon, avec un JSON d'état (`state`, `last_msg_age_s`, `queue_size`, `dropped`, …). Test rapide : `curl localhost:8000/healthz`. Couplé à une politique de redémarrage, il transforme une panne silencieuse en reprise automatique.
+  - **Sur un serveur Linux sans Docker (systemd)** — l'équivalent natif du HEALTHCHECK :
+    ```ini
+    # /etc/systemd/system/crypto-ingest.service
+    [Service]
+    WorkingDirectory=/opt/crypto/ingestion
+    ExecStart=/opt/crypto/ingestion/venv/bin/python stream_to_snowflake.py
+    Restart=always            # relance si le process meurt
+    RestartSec=5
+    [Install]
+    WantedBy=multi-user.target
+    ```
+    (un watchdog de fraîcheur peut, en complément, `curl -f localhost:8000/healthz || systemctl restart crypto-ingest` via un timer.)
+- **Hébergement 24/7** du consumer via Docker (la directive `HEALTHCHECK` du `Dockerfile` relance un conteneur `unhealthy` avec `--restart`) :
   ```bash
   docker build -t crypto-ingest ./ingestion
-  docker run -d --restart=unless-stopped \
+  docker run -d --restart=unless-stopped -p 8000:8000 \
     -e SYMBOLS="btcusdt,ethusdt,solusdt" -e DEPTH_SPEED=1000ms \
     -v "$PWD/ingestion/profile.json:/app/profile.json:ro" \
     -v "$PWD/ingestion/rsa_key.p8:/app/rsa_key.p8:ro" \
     crypto-ingest
+  # docker ps -> colonne STATUS affiche (healthy) / (unhealthy)
   ```
 - **Reproductibilité** : régénérer -> `$flatten-variant` / `$realtime-marts` ; rebuild -> `EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';`.
 </details>
