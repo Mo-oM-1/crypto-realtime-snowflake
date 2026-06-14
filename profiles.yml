@@ -2,10 +2,10 @@
 # account/user peuvent rester arbitraires : le projet tourne sous le contexte Snowflake
 # (role/entrepot ci-dessous) ou, en CI, sous la connexion du Snowflake CLI. Aucun secret ici.
 #
-# Targets :
-#   dev  -> usage interactif (Workspace Snowsight), base de prod ANALYTICS
-#   prod -> deploiement de production (merge sur main)         -> ANALYTICS
-#   ci   -> validation des Pull Requests, base ISOLEE          -> ANALYTICS_CI
+# Targets (3 environnements a bases ISOLEES) :
+#   dev  -> usage interactif (Workspace Snowsight), base DEDIEE -> ANALYTICS_DEV (cf. 09_dev_setup.sql)
+#   prod -> deploiement de production (merge sur main)          -> ANALYTICS
+#   ci   -> validation des Pull Requests, base ISOLEE           -> ANALYTICS_CI
 crypto_realtime:
   target: dev
   outputs:
@@ -15,8 +15,8 @@ crypto_realtime:
       user: unused
       role: CRYPTO_PIPELINE_ROLE
       warehouse: WH_CRYPTO_XS
-      database: ANALYTICS
-      schema: PUBLIC          # dbt creera PUBLIC_STAGING / PUBLIC_INTERMEDIATE / PUBLIC_MARTS
+      database: ANALYTICS_DEV   # base de dev isolee de la prod (cf. snowflake/09_dev_setup.sql)
+      schema: PUBLIC            # dbt creera PUBLIC_STAGING / PUBLIC_INTERMEDIATE / PUBLIC_MARTS
       threads: 8
 
     prod:
