@@ -254,7 +254,7 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 <details>
 <summary><b>Production & exploitation</b></summary>
 
-- **Monitoring automatisé** (`03_alerts.sql`) : alerte de fraîcheur + tests dbt horaires (schéma `ANALYTICS.MONITORING`).
+- **Monitoring automatisé** (`03_alerts.sql`) : alerte de fraîcheur + tests dbt horaires (schéma `ANALYTICS.MONITORING`). Les alertes (fraîcheur + anomalie ML) **notifient réellement par e-mail** via une `NOTIFICATION INTEGRATION` (`SYSTEM$SEND_EMAIL`) **et** loguent dans `pipeline_log` (audit). Prérequis : e-mail destinataire **vérifié** côté Snowsight.
 - **Rafraîchissement continu** : Snowpipe Streaming + Dynamic Tables (`target_lag='1 minute'`), pas de cron dans le chemin critique.
 - **Rétention RAW** (`08_raw_retention.sql`) : purge quotidienne de RAW > 7 jours. RAW est un **buffer** ; l'historique long terme vit dans les marts incrémentaux (`ANALYTICS`). Borne le volume scanné par le dedup de `stg_trades` (sinon le scan grossit sans fin).
 - **Healthcheck du consumer** (`GET /healthz`) : un process peut être *vivant mais zombie* (socket Binance mort, plus rien n'entre). L'endpoint vérifie la **fraîcheur** (a-t-on reçu un message dans les `HEALTH_MAX_SILENCE_S` dernières secondes ?) et renvoie `200` si sain, `503` sinon, avec un JSON d'état (`state`, `last_msg_age_s`, `queue_size`, `dropped`, …). Test rapide : `curl localhost:8000/healthz`. Couplé à une politique de redémarrage, il transforme une panne silencieuse en reprise automatique.

@@ -135,19 +135,24 @@ CREATE OR REPLACE ALERT ANALYTICS.MONITORING.crypto_anomaly_alert
         WHERE is_anomaly AND minute >= dateadd('minute', -15, sysdate())
   ))
   THEN
+  BEGIN
+      -- 1) trace d'audit
       INSERT INTO ANALYTICS.MONITORING.pipeline_log (metric, value, status)
       SELECT 'volume_anomaly',
              COUNT(*),
              'ANOMALY'
       FROM ANALYTICS.MONITORING.MART_VOLUME_ANOMALIES
       WHERE is_anomaly AND minute >= dateadd('minute', -15, sysdate());
+      -- 2) notification reelle (email) - integration crypto_email_int (cf. 03_alerts.sql)
+      CALL SYSTEM$SEND_EMAIL(
+          'crypto_email_int',
+          'r.tobias47@proton.me',
+          'ALERTE crypto : anomalie de volume',
+          'Le modele Cortex ML a flague un volume anormal sur les 15 dernieres minutes. '
+          || 'Voir le dashboard (page Surveillance) ou MART_VOLUME_ANOMALIES.');
+  END;
 
 ALTER ALERT ANALYTICS.MONITORING.crypto_anomaly_alert RESUME;
-
---   Variante e-mail (decommente, remplace par ton e-mail verifie) :
--- ...THEN CALL SYSTEM$SEND_EMAIL('crypto_email_int', 'ton.email@exemple.com',
---      'ALERTE crypto : anomalie de volume',
---      'Le modele a flague un volume anormal sur les 15 dernieres minutes.');
 
 -- 9) Verifs -----------------------------------------------------------
 -- SELECT * FROM ANALYTICS.MONITORING.MART_VOLUME_ANOMALIES WHERE is_anomaly ORDER BY minute DESC;
