@@ -14,6 +14,13 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/*.tfplan
+infra/terraform.tfvars
+
 # dbt
 target/
 dbt_packages/
