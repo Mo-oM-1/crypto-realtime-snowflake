@@ -10,10 +10,13 @@ USE ROLE ACCOUNTADMIN;
 GRANT EXECUTE ALERT ON ACCOUNT TO ROLE CRYPTO_PIPELINE_ROLE;
 GRANT EXECUTE TASK  ON ACCOUNT TO ROLE CRYPTO_PIPELINE_ROLE;
 
--- (Optionnel) Notification email — destinataires = users Snowflake vérifiés
-CREATE NOTIFICATION INTEGRATION IF NOT EXISTS crypto_email_int
+-- Notification email. PREREQUIS : le destinataire doit etre un e-mail VERIFIE
+-- d'un user Snowflake du compte (Snowsight -> profil -> Verify email), sinon
+-- SYSTEM$SEND_EMAIL echoue. ALLOWED_RECIPIENTS borne les destinataires autorises.
+CREATE OR REPLACE NOTIFICATION INTEGRATION crypto_email_int
   TYPE = EMAIL
-  ENABLED = TRUE;
+  ENABLED = TRUE
+  ALLOWED_RECIPIENTS = ('r.tobias47@proton.me');
 GRANT USAGE ON INTEGRATION crypto_email_int TO ROLE CRYPTO_PIPELINE_ROLE;
 
 -- 2) Schéma + table de log de monitoring ------------------------------
@@ -43,27 +46,27 @@ CREATE OR REPLACE ALERT ANALYTICS.MONITORING.crypto_freshness_alert
         HAVING DATEDIFF('second', MAX(ingest_time), CURRENT_TIMESTAMP()) > 120
   ))
   THEN
+  BEGIN
+      -- 1) trace d'audit (historique des incidents)
       INSERT INTO ANALYTICS.MONITORING.pipeline_log (metric, value, status)
       SELECT 'freshness_seconds',
              DATEDIFF('second', MAX(ingest_time), CURRENT_TIMESTAMP()),
              'STALE'
       FROM ANALYTICS.PUBLIC_STAGING.STG_TRADES;
+      -- 2) notification reelle (email)
+      CALL SYSTEM$SEND_EMAIL(
+          'crypto_email_int',
+          'r.tobias47@proton.me',
+          'ALERTE pipeline crypto : donnees obsoletes',
+          'Aucun trade ingere depuis plus de 120 s. Verifie le consumer : '
+          || 'sudo systemctl status crypto-ingest (VM) puis curl localhost:8000/healthz.');
+  END;
 
 ALTER ALERT ANALYTICS.MONITORING.crypto_freshness_alert RESUME;
 
---    Variante e-mail (décommenter ; remplace par ton e-mail vérifié) :
--- CREATE OR REPLACE ALERT ANALYTICS.MONITORING.crypto_freshness_email
---   WAREHOUSE = WH_CRYPTO_XS
---   SCHEDULE  = '5 MINUTE'
---   IF (EXISTS (
---         SELECT 1 FROM ANALYTICS.PUBLIC_STAGING.STG_TRADES
---         HAVING DATEDIFF('second', MAX(ingest_time), CURRENT_TIMESTAMP()) > 120))
---   THEN CALL SYSTEM$SEND_EMAIL(
---         'crypto_email_int',
---         'ton.email@exemple.com',
---         'ALERTE pipeline crypto : données obsolètes',
---         'Aucun trade ingéré depuis > 120s. Vérifie le consumer.');
--- ALTER ALERT ANALYTICS.MONITORING.crypto_freshness_email RESUME;
+-- NB : tant que la donnee reste obsolete, l'alerte renvoie un e-mail a chaque
+-- evaluation (toutes les 5 min) - comportement "re-alerte" facon astreinte.
+-- Pour n'alerter qu'au front (1re detection), il faudrait tracker l'etat precedent.
 
 -- 4) TASK — build dbt planifié (rafraîchit l'incrémental + tests) ----
 --    `dbt build` = run (rafraîchit les modèles INCREMENTAL : fct_ohlcv_1min, etc.) + tests.
