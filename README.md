@@ -233,6 +233,9 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 │   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> file bornee -> Snowpipe Streaming -> RAW VARIANT
 │   ├── requirements.txt / Dockerfile / profile.json.example
 │   └── tests/test_consumer.py    #   tests unitaires consumer (pytest) : routage, backpressure, horodatage, healthcheck
+├── infra/                        # Infrastructure-as-Code (Terraform) : VM EC2 + SG + bootstrap
+│   ├── main.tf / variables.tf / outputs.tf / versions.tf
+│   └── user_data.sh              #   bootstrap VM : swap + venv + service systemd
 ├── .cortex/skills/               # skills Cortex Code
 │   ├── flatten-variant/          #   build (structure + doc + tests de cles)
 │   ├── check-schema-drift/       #   self-healing
@@ -260,6 +263,7 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 - **Rétention RAW** (`08_raw_retention.sql`) : purge quotidienne de RAW > 7 jours. RAW est un **buffer** ; l'historique long terme vit dans les marts incrémentaux (`ANALYTICS`). Borne le volume scanné par le dedup de `stg_trades` (sinon le scan grossit sans fin).
 - **Healthcheck du consumer** (`GET /healthz`) : un process peut être *vivant mais zombie* (socket Binance mort, plus rien n'entre). L'endpoint vérifie la **fraîcheur** (a-t-on reçu un message dans les `HEALTH_MAX_SILENCE_S` dernières secondes ?) et renvoie `200` si sain, `503` sinon, avec un JSON d'état (`state`, `last_msg_age_s`, `queue_size`, `dropped`, …). Test rapide : `curl localhost:8000/healthz`. Couplé à une politique de redémarrage, il transforme une panne silencieuse en reprise automatique.
 - **Hébergement 24/7 (déploiement actuel)** : le consumer tourne sur une **VM AWS EC2 `t2.micro` (région UE, free tier)** en **service `systemd`** — démarrage au boot, relance automatique sur crash (`Restart=always`), survit à la déconnexion SSH et au reboot. Un swap de 2 Go compense la RAM de 1 Go (pic du SDK Snowpipe au démarrage).
+- **Infrastructure-as-Code** (`infra/`, Terraform) : la VM + le security group + le bootstrap complet (swap, venv, service systemd via `user_data`) sont **reproductibles d'un `terraform apply`**. Les secrets restent hors IaC (copiés par `scp`, SSM en cible prod). Cf. `infra/README.md`.
   > ⚠️ **Contrainte géo apprise en prod** : Binance renvoie `HTTP 451 "restricted location"` depuis les IP **US** (AWS us-east inclus). La VM doit être dans une **région non-US** (UE ici). Symptôme : handshake WebSocket qui boucle en `451` alors que la connexion Snowflake, elle, réussit.
   ```ini
   # /etc/systemd/system/crypto-ingest.service
