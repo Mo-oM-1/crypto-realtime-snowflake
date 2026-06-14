@@ -258,29 +258,48 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 - **Rafraîchissement continu** : Snowpipe Streaming + Dynamic Tables (`target_lag='1 minute'`), pas de cron dans le chemin critique.
 - **Rétention RAW** (`08_raw_retention.sql`) : purge quotidienne de RAW > 7 jours. RAW est un **buffer** ; l'historique long terme vit dans les marts incrémentaux (`ANALYTICS`). Borne le volume scanné par le dedup de `stg_trades` (sinon le scan grossit sans fin).
 - **Healthcheck du consumer** (`GET /healthz`) : un process peut être *vivant mais zombie* (socket Binance mort, plus rien n'entre). L'endpoint vérifie la **fraîcheur** (a-t-on reçu un message dans les `HEALTH_MAX_SILENCE_S` dernières secondes ?) et renvoie `200` si sain, `503` sinon, avec un JSON d'état (`state`, `last_msg_age_s`, `queue_size`, `dropped`, …). Test rapide : `curl localhost:8000/healthz`. Couplé à une politique de redémarrage, il transforme une panne silencieuse en reprise automatique.
-  - **Sur un serveur Linux sans Docker (systemd)** — l'équivalent natif du HEALTHCHECK :
-    ```ini
-    # /etc/systemd/system/crypto-ingest.service
-    [Service]
-    WorkingDirectory=/opt/crypto/ingestion
-    ExecStart=/opt/crypto/ingestion/venv/bin/python stream_to_snowflake.py
-    Restart=always            # relance si le process meurt
-    RestartSec=5
-    [Install]
-    WantedBy=multi-user.target
-    ```
-    (un watchdog de fraîcheur peut, en complément, `curl -f localhost:8000/healthz || systemctl restart crypto-ingest` via un timer.)
-- **Hébergement 24/7** du consumer via Docker (la directive `HEALTHCHECK` du `Dockerfile` relance un conteneur `unhealthy` avec `--restart`) :
+- **Hébergement 24/7 (déploiement actuel)** : le consumer tourne sur une **VM AWS EC2 `t2.micro` (région UE, free tier)** en **service `systemd`** — démarrage au boot, relance automatique sur crash (`Restart=always`), survit à la déconnexion SSH et au reboot. Un swap de 2 Go compense la RAM de 1 Go (pic du SDK Snowpipe au démarrage).
+  > ⚠️ **Contrainte géo apprise en prod** : Binance renvoie `HTTP 451 "restricted location"` depuis les IP **US** (AWS us-east inclus). La VM doit être dans une **région non-US** (UE ici). Symptôme : handshake WebSocket qui boucle en `451` alors que la connexion Snowflake, elle, réussit.
+  ```ini
+  # /etc/systemd/system/crypto-ingest.service
+  [Service]
+  User=ubuntu
+  WorkingDirectory=/home/ubuntu/crypto-realtime-snowflake/ingestion
+  ExecStart=/home/ubuntu/crypto-realtime-snowflake/ingestion/venv/bin/python stream_to_snowflake.py
+  Restart=always
+  RestartSec=5
+  [Install]
+  WantedBy=multi-user.target
+  ```
+  ```bash
+  sudo systemctl enable --now crypto-ingest   # démarre + active au boot
+  systemctl status crypto-ingest              # doit afficher "active (running)"
+  curl localhost:8000/healthz                 # état du flux
+  ```
+- **Alternative Docker** (la directive `HEALTHCHECK` du `Dockerfile` relance un conteneur `unhealthy` avec `--restart`) :
   ```bash
   docker build -t crypto-ingest ./ingestion
-  docker run -d --restart=unless-stopped -p 8000:8000 \
+  docker run -d --restart=unless-stopped \
     -e SYMBOLS="btcusdt,ethusdt,solusdt" -e DEPTH_SPEED=1000ms \
     -v "$PWD/ingestion/profile.json:/app/profile.json:ro" \
     -v "$PWD/ingestion/rsa_key.p8:/app/rsa_key.p8:ro" \
     crypto-ingest
-  # docker ps -> colonne STATUS affiche (healthy) / (unhealthy)
   ```
 - **Reproductibilité** : régénérer -> `$flatten-variant` / `$realtime-marts` ; rebuild -> `EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build';`.
+</details>
+
+<details>
+<summary><b>Limites connues</b></summary>
+
+Choix assumés et limites résiduelles (un projet portfolio honnête vaut mieux qu'un faux "prod-ready") :
+
+- **Consumer mono-instance.** La résilience locale est couverte (healthcheck `/healthz` + `systemd Restart=always` : relance sur crash, reboot, déconnexion). Mais c'est **une seule VM** : pas de haute dispo multi-instances ni de bascule automatique. Suffisant pour une démo 24/7, hors scope pour du vrai HA.
+- **Contrainte géographique Binance.** L'ingestion exige une IP **non-US** (`HTTP 451` sinon). La VM doit donc rester dans une région autorisée (UE).
+- **Fenêtre "live" bornée** (`var('live_window_minutes')`) : les vues temps réel ne scannent qu'une fenêtre courte — **choix FinOps** délibéré (limiter le scan = limiter les crédits), pas un historique long en temps réel.
+- **Détection d'anomalies ML : démarrage à froid.** Le modèle a besoin de **plusieurs heures d'historique frais** pour être pertinent ; sur peu de données il sur-déclenche. C'est la nature d'un modèle de détection, pas un bug.
+- **Incrémental piloté par tâche.** Le rafraîchissement de `FCT_OHLCV_1MIN` dépend de la task `dbt build` planifiée (choix d'archi : dbt natif Snowflake, pas de Dynamic Table sur ce modèle), pas du streaming pur.
+- **Coût Snowflake en continu.** Une ingestion 24/7 implique une consommation Snowflake continue (Snowpipe Streaming + tasks + stockage) ; encadrée par un **Resource Monitor**, mais à surveiller.
+
 </details>
 
 <details>
