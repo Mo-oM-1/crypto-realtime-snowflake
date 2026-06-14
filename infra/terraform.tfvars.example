@@ -1,0 +1,8 @@
+# Copie ce fichier en terraform.tfvars puis adapte les valeurs.
+# terraform.tfvars est gitignore (il contient ton IP) - ne le commite pas.
+
+region           = "eu-west-3"        # Paris (NON-US obligatoire : Binance bloque les IP US)
+instance_type    = "t2.micro"         # 1 vCPU, free tier
+key_name         = "key"              # nom de ta key pair EC2 (SANS le .pem)
+allowed_ssh_cidr = "203.0.113.10/32"  # remplace par TON IP/32 -> curl https://ifconfig.me
+root_volume_gb   = 8
