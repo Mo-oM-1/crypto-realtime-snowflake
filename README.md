@@ -227,7 +227,8 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 │   ├── 05_quality_monitoring.sql # task : log des echecs de tests qualite
 │   ├── 06_ci_setup.sql           # environnement CI isole (ANALYTICS_CI, role, user de service)
 │   ├── 07_ml_anomaly.sql         # surveillance : detection d'anomalies (Cortex ML) + alerte
-│   └── 08_raw_retention.sql      # purge RAW (borne le scan) - RAW = buffer, historique dans ANALYTICS
+│   ├── 08_raw_retention.sql      # purge RAW (borne le scan) - RAW = buffer, historique dans ANALYTICS
+│   └── 09_dev_setup.sql          # env DEV isole (ANALYTICS_DEV) - dev != prod
 ├── ingestion/                    # consumer temps reel (ingestion brute, NE flatten pas)
 │   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> file bornee -> Snowpipe Streaming -> RAW VARIANT
 │   ├── requirements.txt / Dockerfile / profile.json.example
