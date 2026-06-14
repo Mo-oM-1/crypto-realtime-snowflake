@@ -116,10 +116,10 @@ CREATE OR REPLACE TASK ANALYTICS.MONITORING.crypto_anomaly_retrain
       TARGET_COLNAME    => 'VOLUME',
       LABEL_COLNAME     => '');
 
--- 7b) Scoring regulier (toutes les 15 min) -> remplit MART_VOLUME_ANOMALIES
+-- 7b) Scoring regulier (toutes les 30 min) -> remplit MART_VOLUME_ANOMALIES
 CREATE OR REPLACE TASK ANALYTICS.MONITORING.crypto_anomaly_score
   WAREHOUSE = WH_CRYPTO_XS
-  SCHEDULE  = '15 MINUTE'
+  SCHEDULE  = '30 MINUTE'
   AS
   CALL ANALYTICS.MONITORING.SP_SCORE_VOLUME_ANOMALIES();
 
