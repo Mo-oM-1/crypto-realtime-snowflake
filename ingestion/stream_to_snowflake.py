@@ -39,6 +39,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Les imports tiers (snowpipe-streaming, websocket-client) sont charges en LAZY,
 # au moment de l'usage reel : le module reste importable (et testable) sans ces deps.
@@ -63,6 +64,11 @@ WS_BASE = "wss://stream.binance.com:9443/stream?streams="
 QUEUE_MAXSIZE  = int(os.environ.get("QUEUE_MAXSIZE", "100000"))    # borne memoire ; au-dela -> drop observable
 BATCH_MAX_ROWS = int(os.environ.get("BATCH_MAX_ROWS", "5000"))     # taille max d'un micro-batch draine
 BATCH_MAX_SECS = float(os.environ.get("BATCH_MAX_SECONDS", "1.0")) # borne temps d'un micro-batch
+
+# --- Healthcheck (liveness + fraicheur) --------------------------------------
+HEALTHCHECK_PORT     = int(os.environ.get("HEALTHCHECK_PORT", "8000"))       # endpoint GET /healthz
+HEALTH_MAX_SILENCE_S = float(os.environ.get("HEALTH_MAX_SILENCE_S", "30"))   # silence max avant "stale" (zombie)
+HEALTH_GRACE_S       = float(os.environ.get("HEALTH_GRACE_SECONDS", "60"))   # fenetre de demarrage (pas encore de data = OK)
 
 os.environ.setdefault("SS_LOG_LEVEL", "warn")  # logs du SDK Snowpipe Streaming
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -115,12 +121,18 @@ class TableChannel:
 
 
 class CryptoIngestor:
-    def __init__(self, trades=None, depth=None, clock=None):
+    def __init__(self, trades=None, depth=None, clock=None,
+                 max_silence_s=HEALTH_MAX_SILENCE_S, grace_s=HEALTH_GRACE_S):
         # Injection de dependances : en prod on cree les vrais canaux Snowpipe ;
         # en test on injecte de faux canaux + une horloge deterministe (clock).
         self.trades = trades if trades is not None else TableChannel(TRADES_TABLE)
         self.depth = depth if depth is not None else TableChannel(DEPTH_TABLE)
         self._clock = clock or (lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+        # Healthcheck : heartbeat de RECEPTION (le socket livre-t-il des donnees ?)
+        self._started_at = self._clock()
+        self._last_msg_at = None
+        self._max_silence_s = max_silence_s
+        self._grace_s = grace_s
         self._stop = threading.Event()
         self._connected = threading.Event()
         self.ws = None
@@ -139,6 +151,7 @@ class CryptoIngestor:
     def on_message(self, _ws, message: str):
         # Heure de RECEPTION, estampillee AVANT la mise en file (cf. note dans append()).
         ingest_ts = self._clock()
+        self._last_msg_at = ingest_ts  # heartbeat healthcheck : un message recu = socket vivant
         try:
             msg = json.loads(message)
         except json.JSONDecodeError:
@@ -213,6 +226,36 @@ class CryptoIngestor:
                 except Exception as e:  # pragma: no cover
                     log.debug("status %s: %s", tc.table, e)
 
+    # ---- healthcheck : liveness + fraicheur (consomme par /healthz) ----
+    def health(self, now=None):
+        """Retourne (ok: bool, details: dict).
+
+        Sain si un message a ete recu recemment (socket vivant + data qui coule).
+        Pendant la fenetre de demarrage (grace), l'absence de message est toleree
+        -> evite un 'unhealthy' au lancement avant la 1re connexion WebSocket.
+        """
+        now = now or self._clock()
+        uptime = (now - self._started_at).total_seconds()
+        if self._last_msg_at is None:
+            age = None
+            ok = uptime < self._grace_s
+            state = "starting" if ok else "no_data"
+        else:
+            age = (now - self._last_msg_at).total_seconds()
+            ok = age <= self._max_silence_s
+            state = "healthy" if ok else "stale"
+        return ok, {
+            "status": "ok" if ok else "unhealthy",
+            "state": state,
+            "uptime_s": round(uptime, 1),
+            "last_msg_age_s": None if age is None else round(age, 1),
+            "queue_size": self.q.qsize(),
+            "enqueued": self.enqueued,
+            "processed": self.processed,
+            "dropped": self.dropped,
+            "connected": self._connected.is_set(),
+        }
+
     def stop(self, *_):
         self._stop.set()
         if self.ws is not None:                 # debloque run_forever() pour sortir proprement
@@ -234,6 +277,33 @@ def build_url() -> str:
     return WS_BASE + "/".join(streams)
 
 
+def make_health_server(ingestor, port=HEALTHCHECK_PORT):
+    """Serveur HTTP minimal (stdlib) : GET /healthz -> 200 si sain, 503 sinon.
+
+    Permet a Docker (directive HEALTHCHECK), systemd ou un uptime-monitor de
+    detecter un consumer 'zombie' (process vivant mais flux Binance mort) et de
+    le relancer. Tourne sur un thread daemon : zero impact sur l'ingestion.
+    """
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.rstrip("/") not in ("", "/healthz", "/health"):
+                self.send_response(404)
+                self.end_headers()
+                return
+            ok, payload = ingestor.health()
+            body = json.dumps(payload).encode()
+            self.send_response(200 if ok else 503)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_):  # pas de spam des requetes HTTP dans les logs
+            pass
+
+    return ThreadingHTTPServer(("0.0.0.0", port), _Handler)
+
+
 def main():
     import websocket  # import lazy (paquet "websocket-client")
 
@@ -245,6 +315,10 @@ def main():
     writer = threading.Thread(target=ing.writer_loop, name="ss-writer")
     writer.start()
     threading.Thread(target=ing.stats_loop, daemon=True).start()
+
+    health_srv = make_health_server(ing, HEALTHCHECK_PORT)
+    threading.Thread(target=health_srv.serve_forever, name="healthz", daemon=True).start()
+    log.info("Healthcheck: GET http://0.0.0.0:%d/healthz", HEALTHCHECK_PORT)
 
     url = build_url()
     log.info("Connexion: %s", url)
@@ -269,6 +343,7 @@ def main():
 
     log.info("Arret - drainage de la file puis fermeture des canaux Snowpipe Streaming...")
     writer.join(timeout=30)  # laisse le writer vider la file restante
+    health_srv.shutdown()
     ing.close()
 
 

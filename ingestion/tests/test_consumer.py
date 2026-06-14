@@ -6,7 +6,7 @@ connexion Binance/Snowflake : les imports tiers du module sont lazy.
 """
 import json
 import queue
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import stream_to_snowflake as si
 
@@ -105,3 +105,40 @@ def test_drain_writes_record_and_receipt_ts_to_channel():
 def test_drain_returns_false_when_queue_empty():
     ing, _, _ = make_ingestor()
     assert ing._drain_once(timeout=0.05) is False
+
+
+# ---- healthcheck : liveness + fraicheur ----
+
+def test_health_starting_is_tolerated_before_first_message():
+    # Au lancement, pas encore de message : sain pendant la fenetre de grace.
+    ing, _, _ = make_ingestor()
+    ok, info = ing.health(now=FIXED_TS)
+    assert ok is True
+    assert info["state"] == "starting"
+    assert info["last_msg_age_s"] is None
+
+
+def test_health_no_data_after_grace_window():
+    # Toujours aucun message passe la fenetre de grace -> unhealthy (le socket ne livre rien).
+    ing, _, _ = make_ingestor()
+    ok, info = ing.health(now=FIXED_TS + timedelta(seconds=ing._grace_s + 1))
+    assert ok is False
+    assert info["state"] == "no_data"
+
+
+def test_health_ok_when_message_is_fresh():
+    ing, _, _ = make_ingestor()
+    ing.on_message(None, json.dumps({"stream": "btcusdt@trade", "data": {}}))  # last_msg_at = FIXED_TS
+    ok, info = ing.health(now=FIXED_TS)
+    assert ok is True
+    assert info["state"] == "healthy"
+    assert info["last_msg_age_s"] == 0.0
+
+
+def test_health_stale_when_silence_exceeds_threshold():
+    # Process vivant mais plus de message depuis trop longtemps -> zombie -> unhealthy.
+    ing, _, _ = make_ingestor()
+    ing.on_message(None, json.dumps({"stream": "btcusdt@trade", "data": {}}))
+    ok, info = ing.health(now=FIXED_TS + timedelta(seconds=ing._max_silence_s + 5))
+    assert ok is False
+    assert info["state"] == "stale"
