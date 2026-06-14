@@ -34,12 +34,12 @@ CREATE TABLE IF NOT EXISTS ANALYTICS.MONITORING.pipeline_log (
 
 -- 3) ALERT de fraîcheur ----------------------------------------------
 --    Se déclenche si aucun trade ingéré depuis > 120 s (SLO error).
---    Schedule à 5 min pour limiter le coût (le warehouse se réveille à
---    chaque check). Pour une détection plus fine, passe à '1 MINUTE'
---    ou utilise une alerte serverless (sans WAREHOUSE).
+--    Schedule à 15 min : compromis FinOps (chaque check réveille le warehouse,
+--    facturé min 60 s). Pour une détection plus fine, baisse à '5 MINUTE'
+--    ou bascule sur une alerte serverless (sans WAREHOUSE).
 CREATE OR REPLACE ALERT ANALYTICS.MONITORING.crypto_freshness_alert
   WAREHOUSE = WH_CRYPTO_XS
-  SCHEDULE  = '5 MINUTE'
+  SCHEDULE  = '15 MINUTE'
   IF (EXISTS (
         SELECT 1
         FROM ANALYTICS.PUBLIC_STAGING.STG_TRADES
@@ -65,7 +65,7 @@ CREATE OR REPLACE ALERT ANALYTICS.MONITORING.crypto_freshness_alert
 ALTER ALERT ANALYTICS.MONITORING.crypto_freshness_alert RESUME;
 
 -- NB : tant que la donnee reste obsolete, l'alerte renvoie un e-mail a chaque
--- evaluation (toutes les 5 min) - comportement "re-alerte" facon astreinte.
+-- evaluation (toutes les 15 min) - comportement "re-alerte" facon astreinte.
 -- Pour n'alerter qu'au front (1re detection), il faudrait tracker l'etat precedent.
 
 -- 4) TASK — build dbt planifié (rafraîchit l'incrémental + tests) ----
