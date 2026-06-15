@@ -240,7 +240,10 @@ class CryptoIngestor:
                 self._last_write_at = self._clock()  # heartbeat d'ECRITURE (healthcheck)
             except Exception as e:  # pragma: no cover
                 self.write_errors += 1
-                log.warning("append %s: %s", target.table, e)
+                # Log BORNE (1 ligne / 1000) : une panne Snowflake prolongee ne doit pas
+                # noyer le journal ni remplir le disque (incident vecu : syslog a 2,5 Go).
+                if self.write_errors % 1000 == 1:
+                    log.warning("append %s a echoue (%d cumules): %s", target.table, self.write_errors, e)
         return True
 
     def writer_loop(self):
