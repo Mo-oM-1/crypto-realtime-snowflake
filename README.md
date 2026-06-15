@@ -21,7 +21,7 @@
 ## Highlights
 
 - **Agentic** : la couche dbt (flatten + marts) est **générée par Cortex Code**, pas écrite à la main.
-- **Self-healing** : un agent détecte la dérive de schéma et **étend les modèles staging tout seul**.
+- **Self-healing gouverné** : la dérive de schéma est **détectée automatiquement** ; l'agent **propose** une extension additive du staging, **revue avant merge**.
 - **Qualité auto** : un agent génère des **tests métier** (invariants OHLC / order book) ; il a même **trouvé un vrai bug**.
 - **Vrai temps réel** : Snowpipe Streaming + vues calculées à la lecture ; **latence d'ingestion p95 ~0,13 s** (event Binance -> réception), **~900 trades/s**. (Le end-to-end jusqu'à requêtable ajoute le commit Snowpipe ~5-10 s, sous le SLO de 15 s.)
 - **Production** : SLO mesurés, monitoring/alertes, **FinOps** (resource monitor), exploitation 24/7.
@@ -160,13 +160,13 @@ Requêtes de monitoring : [`snowflake/02_observability.sql`](./snowflake/02_obse
 
 ## Démo
 
-### Self-healing : l'agent détecte une nouvelle clé et répare le staging
+### Self-healing gouverné : détection auto → l'agent propose, l'humain merge
 
-| Détection | Auto-réparation |
+| Détection (auto) | Remédiation (proposée, revue) |
 |---|---|
 | ![Dérive détectée](docs/screenshots/schema-drift-new-key-detected.png) | ![Rapport self-heal](docs/screenshots/schema-drift-selfheal-report.png) |
 
-L'agent repère `x_signal` (clé non mappée dans le VARIANT), l'ajoute au staging en **additif**, et rebuild en vert : le flatten se répare tout seul.
+La dérive est **détectée automatiquement** ; l'agent **propose** l'ajout de la nouvelle clé au staging en **additif**, le rebuild passe au vert — **extension revue avant merge** (cf. [`docs/runs/schema-drift-selfheal.md`](docs/runs/schema-drift-selfheal.md)).
 
 ### Qualité sous gouvernance : un test généré attrape un vrai bug
 

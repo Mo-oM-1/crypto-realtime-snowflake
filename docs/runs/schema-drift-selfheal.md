@@ -137,11 +137,28 @@ RAW_TRADES    xs    DECIMAL    1
          ingest_time
      from flattened
 ```
-Rapport de l'agent : `RAW_DEPTH` sans dérive ; clés connues (`E,e,T,t,s,p,q,m,M`) stables ;
-`x_signal` laissé **nullable** (1 ligne sur ~2,9 M la porte → pas de test `not_null`).
+Rapport textuel **réel** de l'agent (`$check-schema-drift`) pour ce run :
+
+```
+Drift report
+RAW.CRYPTO.RAW_TRADES — drift found
+- NEW key: xs (DECIMAL, 1 occurrence — matches the injected fixture sentinel trade 999000111).
+  - Action: additively added `record:data:xs::number(38,8) as x_signal` to
+    models/staging/stg_trades.sql (both the flatten CTE and final select). No existing columns touched.
+- Top-level RECORD keys (stream, data) — as expected, no drift.
+- All known keys (E,e,T,t,s,p,q,m,M) still present and type-stable.
+RAW.CRYPTO.RAW_DEPTH — no drift.
+- RECORD:data keys = lastUpdateId (INTEGER), bids (ARRAY), asks (ARRAY) — all covered. Staging in sync.
+Validation: EXECUTE DBT PROJECT ANALYTICS.PUBLIC.crypto_realtime ARGS='build --select stg_trades'
+  → PASS=10 WARN=0 ERROR=0.
+Note: x_signal nullable (1 ligne sur ~2,9 M) → pas de test not_null. Additif, prêt pour revue humaine.
+```
+
+<details><summary>Capture (illustration, optionnelle)</summary>
 
 ![Rapport de dérive de l'agent](../screenshots/schema-drift-selfheal-report.png)
-*Sortie réelle de `$check-schema-drift` pour ce run (illustration de la boucle ci-dessus, elle-même reproductible via les fixtures).*
+
+</details>
 
 **4. Revue humaine** : diff conforme aux garde-fous — additif, cast `NUMBER(38,8)` (convention
 montant/quantité), alias UPPER_CASE, dedup intact. Aucune suppression de colonne. ✓
