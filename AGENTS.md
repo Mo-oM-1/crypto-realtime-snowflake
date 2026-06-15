@@ -44,8 +44,11 @@ Then run dbt compile, dbt run, and dbt test.
 
 ## $realtime-marts
 
-**But :** générer les marts TEMPS RÉEL (vues live calculées à la lecture) + l'historique (Dynamic Tables).
-À lancer **après** `$flatten-variant` (utilise `stg_trades`, `stg_depth_levels`).
+> **Prompt (recette), pas un skill.** Les 3 skills productisés sont dans `.cortex/skills/` ;
+> ceci est un prompt réutilisable d'`AGENTS.md` pour itérer la couche marts.
+
+**But :** générer les marts TEMPS RÉEL (vues live calculées à la lecture) + l'historique (incrémental + 1 Dynamic Table).
+À lancer **après** le skill `flatten-variant` (utilise `stg_trades`, `stg_depth_levels`).
 
 **Prompt :**
 

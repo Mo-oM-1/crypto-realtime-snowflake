@@ -8,6 +8,10 @@ par préoccupation). Définitions : [`.cortex/skills/*/SKILL.md`](../.cortex/ski
 > Principe transverse : **l'agent propose, la CI prouve (`ANALYTICS_CI`), l'humain merge.**
 > Boucles rejouables et tracées : [`docs/runs/`](./runs/).
 
+> **Skill ≠ prompt.** Les **3 skills** ci-dessous sont des capabilities productisées
+> (`.cortex/skills/*/SKILL.md`). À ne pas confondre avec `$realtime-marts`, un simple **prompt**
+> réutilisable dans [`AGENTS.md`](../AGENTS.md) (recette pour itérer la couche marts).
+
 ---
 
 ## 1. `flatten-variant` — *Build*
