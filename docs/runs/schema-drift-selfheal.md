@@ -140,6 +140,9 @@ RAW_TRADES    xs    DECIMAL    1
 Rapport de l'agent : `RAW_DEPTH` sans dérive ; clés connues (`E,e,T,t,s,p,q,m,M`) stables ;
 `x_signal` laissé **nullable** (1 ligne sur ~2,9 M la porte → pas de test `not_null`).
 
+![Rapport de dérive de l'agent](../screenshots/schema-drift-selfheal-report.png)
+*Sortie réelle de `$check-schema-drift` pour ce run (illustration de la boucle ci-dessus, elle-même reproductible via les fixtures).*
+
 **4. Revue humaine** : diff conforme aux garde-fous — additif, cast `NUMBER(38,8)` (convention
 montant/quantité), alias UPPER_CASE, dedup intact. Aucune suppression de colonne. ✓
 
