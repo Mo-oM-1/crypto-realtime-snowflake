@@ -114,14 +114,19 @@ Plan détaillé : [`PROJECT_PLAN.md`](./PROJECT_PLAN.md).
 
 ## Agents & orchestration
 
-Un agent IA natif Snowflake, **Cortex Code (CoCo)**, via **3 skills spécialisés**. Principe :
-on **automatise la détection** (SQL planifié), la **remédiation reste agentique sous revue humaine**.
+Un agent IA natif Snowflake, **Cortex Code**, via **3 skills spécialisés et bornés**. L'angle n'est
+pas l'autonomie mais la **gouvernance** : **l'agent propose → la CI prouve (`ANALYTICS_CI`) → l'humain merge.**
+On **automatise la détection** (SQL planifié), la **remédiation reste agentique sous revue humaine**.
+
+> 📑 Contrats détaillés des skills (entrée / sortie / garde-fous) : [`docs/skills.md`](./docs/skills.md).
+> 🔁 Boucles **rejouables et tracées** (pas des captures) : [`docs/runs/`](./docs/runs/) —
+> [self-heal de dérive](./docs/runs/schema-drift-selfheal.md) · [bug réel attrapé par un test](./docs/runs/caught-bug.md).
 
 | Skill | Rôle | Déclenchement |
 |---|---|---|
-| `flatten-variant` (+ `realtime-marts`) | **Build** : VARIANT -> staging -> marts (vues live + Dynamic Tables) | à la demande |
+| `flatten-variant` | **Build** : VARIANT -> staging -> marts (vues live + incrémental) + tests de clés + doc | à la demande |
 | `check-schema-drift` | **Maintain / self-heal** : détecte les clés/types non mappés, étend le staging (additif) | sur alerte de drift |
-| `generate-quality-tests` | **Quality** : profile les modèles, génère des tests métier (OHLC, order book, RSI) | à la demande / sur échec |
+| `generate-quality-tests` | **Quality** : profile les modèles, génère tests métier + unit tests (OHLC, order book, RSI) | à la demande / sur échec |
 
 **Orchestration (détection auto -> remédiation agentique) :**
 
@@ -258,6 +263,9 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 ├── tests/                        # tests qualite (singular) - skill generate-quality-tests
 ├── seeds/dim_symbols.csv
 ├── dash/streamlit_app.py
+├── docs/                         # skills (contrats) + runs rejouables (preuves) + screenshots
+│   ├── skills.md
+│   └── runs/                     #   self-heal de drift, bug attrape (fixtures + captures)
 └── runbook/cortex_code_prompts.md
 ```
 
