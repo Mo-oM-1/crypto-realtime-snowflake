@@ -82,24 +82,44 @@ class TableChannel:
     pas de verrou necessaire pour l'offset.
     """
 
-    def __init__(self, table: str):
-        from snowflake.ingest.streaming import StreamingIngestClient  # import lazy
-
+    def __init__(self, table: str, client_factory=None):
+        # client_factory injectable -> testable sans Snowflake (defaut = SDK reel, lazy).
+        if client_factory is None:
+            from snowflake.ingest.streaming import StreamingIngestClient  # import lazy
+            client_factory = StreamingIngestClient
+        self._make_client = client_factory
         self.table = table
         self.pipe = f"{table}-STREAMING"  # default pipe (auto-cree par Snowflake)
-        self.client = StreamingIngestClient(
-            client_name=f"CRYPTO_{table}_{uuid.uuid4()}",
+        self.offset = 0
+        self.reopens = 0  # nb de reouvertures de canal (observabilite)
+        self._open()
+
+    def _open(self) -> None:
+        self.client = self._make_client(
+            client_name=f"CRYPTO_{self.table}_{uuid.uuid4()}",
             db_name=DATABASE,
             schema_name=SCHEMA,
             pipe_name=self.pipe,
             profile_json=PROFILE_JSON,
         )
         # open_channel renvoie un tuple ; le canal est en position [0]
-        self.channel = self.client.open_channel(f"CH_{table}_{uuid.uuid4()}")[0]
+        self.channel = self.client.open_channel(f"CH_{self.table}_{uuid.uuid4()}")[0]
         self.offset = 0
         log.info("Canal ouvert: %s (pipe %s)", self.channel.channel_name, self.pipe)
 
-    def append(self, record: dict, ingest_ts: datetime) -> None:
+    def _reopen(self) -> None:
+        """Ferme (best effort) et rouvre un canal neuf apres invalidation."""
+        self.reopens += 1
+        for closer in (getattr(self, "channel", None), getattr(self, "client", None)):
+            try:
+                if closer is not None:
+                    closer.close()
+            except Exception:
+                pass
+        self._open()
+        log.warning("Canal %s rouvert (reopen #%d)", self.table, self.reopens)
+
+    def _append_row(self, record: dict, ingest_ts: datetime) -> None:
         self.offset += 1
         # RECORD = colonne VARIANT (dict Python). INGEST_TIME = heure de RECEPTION,
         # estampillee dans on_message (avant la file) : le DEFAULT CURRENT_TIMESTAMP()
@@ -109,6 +129,18 @@ class TableChannel:
             {"RECORD": record, "INGEST_TIME": ingest_ts},
             str(self.offset),
         )
+
+    def append(self, record: dict, ingest_ts: datetime) -> None:
+        # Resilience : un canal Snowpipe Streaming peut devenir INVALIDE (reset serveur,
+        # token...). Le SDK demande alors de "close and re-open the channel". On rouvre et
+        # on retente UNE fois. Les doublons eventuels sont absorbes par le dedup downstream
+        # (stg_trades deduplique par trade_id) -> ingestion idempotente cote marts.
+        try:
+            self._append_row(record, ingest_ts)
+        except Exception as e:
+            log.warning("append %s a echoue (%s) -> reopen + retry", self.table, type(e).__name__)
+            self._reopen()
+            self._append_row(record, ingest_ts)
 
     def status(self):
         return self.channel.get_channel_status()
@@ -128,9 +160,11 @@ class CryptoIngestor:
         self.trades = trades if trades is not None else TableChannel(TRADES_TABLE)
         self.depth = depth if depth is not None else TableChannel(DEPTH_TABLE)
         self._clock = clock or (lambda: datetime.now(timezone.utc).replace(tzinfo=None))
-        # Healthcheck : heartbeat de RECEPTION (le socket livre-t-il des donnees ?)
+        # Healthcheck : heartbeat de RECEPTION (Binance) ET d'ECRITURE (Snowflake).
+        # Suivre les deux evite l'angle mort "on recoit mais on n'ecrit plus" (canal invalide).
         self._started_at = self._clock()
-        self._last_msg_at = None
+        self._last_msg_at = None     # derniere RECEPTION (thread WebSocket)
+        self._last_write_at = None   # derniere ECRITURE Snowflake reussie (thread writer)
         self._max_silence_s = max_silence_s
         self._grace_s = grace_s
         self._stop = threading.Event()
@@ -139,9 +173,10 @@ class CryptoIngestor:
         # file bornee de decouplage WebSocket -> writer
         self.q: "queue.Queue[tuple[object, dict, datetime]]" = queue.Queue(maxsize=QUEUE_MAXSIZE)
         # compteurs (chaque compteur n'est ecrit que par UN thread -> pas de verrou)
-        self.enqueued = 0   # ecrit par le thread WebSocket
-        self.dropped = 0    # ecrit par le thread WebSocket
-        self.processed = 0  # ecrit par le thread writer
+        self.enqueued = 0      # ecrit par le thread WebSocket
+        self.dropped = 0       # ecrit par le thread WebSocket
+        self.processed = 0     # ecrit par le thread writer
+        self.write_errors = 0  # echecs d'ecriture (apres retry/reopen) - thread writer
 
     # ---- callbacks WebSocket (thread de lecture du socket : zero I/O Snowflake) ----
     def on_open(self, _ws):
@@ -202,7 +237,9 @@ class CryptoIngestor:
             try:
                 target.append(record, ts)
                 self.processed += 1
+                self._last_write_at = self._clock()  # heartbeat d'ECRITURE (healthcheck)
             except Exception as e:  # pragma: no cover
+                self.write_errors += 1
                 log.warning("append %s: %s", target.table, e)
         return True
 
@@ -226,33 +263,46 @@ class CryptoIngestor:
                 except Exception as e:  # pragma: no cover
                     log.debug("status %s: %s", tc.table, e)
 
-    # ---- healthcheck : liveness + fraicheur (consomme par /healthz) ----
+    # ---- healthcheck : RECEPTION + ECRITURE (consomme par /healthz) ----
     def health(self, now=None):
         """Retourne (ok: bool, details: dict).
 
-        Sain si un message a ete recu recemment (socket vivant + data qui coule).
-        Pendant la fenetre de demarrage (grace), l'absence de message est toleree
-        -> evite un 'unhealthy' au lancement avant la 1re connexion WebSocket.
+        Sain si on RECOIT (socket vivant) ET on ECRIT (Snowflake) recemment.
+        - 'stale'         : plus de reception (socket Binance mort).
+        - 'write_stalled' : on recoit mais les ecritures Snowflake sont bloquees
+          (ex. canal invalide) -> l'angle mort historique de ce healthcheck.
+        Pendant la fenetre de demarrage (grace), l'absence de data est toleree.
         """
         now = now or self._clock()
         uptime = (now - self._started_at).total_seconds()
-        if self._last_msg_at is None:
-            age = None
+        recv_age = None if self._last_msg_at is None else (now - self._last_msg_at).total_seconds()
+        write_age = None if self._last_write_at is None else (now - self._last_write_at).total_seconds()
+
+        if self._last_msg_at is None:                       # rien recu encore
             ok = uptime < self._grace_s
             state = "starting" if ok else "no_data"
+        elif recv_age > self._max_silence_s:                # reception morte
+            ok, state = False, "stale"
+        elif self._last_write_at is None:                   # on recoit mais jamais ecrit
+            ok = uptime < self._grace_s
+            state = "starting" if ok else "write_stalled"
+        elif write_age > self._max_silence_s:               # on recoit mais ecritures bloquees
+            ok, state = False, "write_stalled"
         else:
-            age = (now - self._last_msg_at).total_seconds()
-            ok = age <= self._max_silence_s
-            state = "healthy" if ok else "stale"
+            ok, state = True, "healthy"
+
         return ok, {
             "status": "ok" if ok else "unhealthy",
             "state": state,
             "uptime_s": round(uptime, 1),
-            "last_msg_age_s": None if age is None else round(age, 1),
+            "last_msg_age_s": None if recv_age is None else round(recv_age, 1),
+            "last_write_age_s": None if write_age is None else round(write_age, 1),
             "queue_size": self.q.qsize(),
             "enqueued": self.enqueued,
             "processed": self.processed,
             "dropped": self.dropped,
+            "write_errors": self.write_errors,
+            "channel_reopens": getattr(self.trades, "reopens", 0) + getattr(self.depth, "reopens", 0),
             "connected": self._connected.is_set(),
         }
 
