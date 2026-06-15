@@ -266,9 +266,31 @@ def page_trader():
 def page_prix():
     sym = current_symbol()
     st.header(f"Prix & carnet - {sym}")
-    col1, col2 = st.columns([2, 1])
+
+    ohlcv = load_ohlcv(session, sym)
+    ob = load_orderbook(session, sym)
+    metrics = load_metrics(session, sym)
+    m = metrics.iloc[-1] if not metrics.empty else None
+    r = ob.iloc[0] if not ob.empty else None
+    close = ohlcv["CLOSE"].iloc[-1] if not ohlcv.empty else None
+
+    # --- Bandeau KPI (haut, pleine largeur) : la lecture rapide d'abord ---
+    def _v(x, fmt):
+        return "-" if x is None or pd.isna(x) else format(x, fmt)
+
+    k = st.columns(5)
+    k[0].metric("Prix", _v(close, ".2f"),
+                None if m is None or pd.isna(m["PRICE_CHANGE_PCT_5MIN"]) else f"{m['PRICE_CHANGE_PCT_5MIN']:+.2f}% / 5min")
+    k[1].metric("RSI 14", "warm-up" if m is None or pd.isna(m["RSI_14"]) else f"{m['RSI_14']:.0f}")
+    k[2].metric("Volatilite", _v(None if m is None else m["REALIZED_VOLATILITY"], ".4f"))
+    k[3].metric("Spread (bps)", _v(None if r is None else r["SPREAD_BPS"], ".2f"))
+    k[4].metric("Imbalance", "-" if r is None else f"{r['IMBALANCE']:.2%}")
+
+    st.divider()
+
+    # --- Bougies + volume (gauche) | carnet (droite) ---
+    col1, col2 = st.columns([3, 1])
     with col1:
-        ohlcv = load_ohlcv(session, sym)
         if ohlcv.empty:
             st.info("Pas de donnees recentes pour ce symbole.")
         else:
@@ -287,26 +309,14 @@ def page_prix():
                 y=alt.Y("VOLUME:Q", title="volume"), color=up_down, tooltip=tip)
             st.altair_chart(_style(vol, 130), theme=None, width="stretch")
     with col2:
-        st.subheader("Order book (live)")
-        ob = load_orderbook(session, sym)
-        if not ob.empty:
-            r = ob.iloc[0]
-            st.metric("Mid", f"{r['MID']:.2f}")
-            st.metric("Spread (bps)", f"{r['SPREAD_BPS']:.2f}")
-            st.metric("Imbalance", f"{r['IMBALANCE']:.2%}")
-            st.metric("Microprice", f"{r['MICROPRICE']:.2f}")
-        st.subheader("Indicateurs")
-        metrics = load_metrics(session, sym)
-        if metrics.empty:
-            st.info("Indicateurs indisponibles.")
+        st.subheader("Carnet (live)")
+        if r is None:
+            st.info("Carnet indisponible.")
         else:
-            last = metrics.iloc[-1]
-            rsi, vol_r, chg = last["RSI_14"], last["REALIZED_VOLATILITY"], last["PRICE_CHANGE_PCT_5MIN"]
-            st.metric("RSI 14", "warm-up" if pd.isna(rsi) else f"{rsi:.1f}")
-            st.metric("Volatilite realisee", "-" if pd.isna(vol_r) else f"{vol_r:.4f}")
-            st.metric("Variation 5 min", "-" if pd.isna(chg) else f"{chg:+.2f}%")
+            st.metric("Mid", f"{r['MID']:.2f}")
+            st.metric("Microprice", f"{r['MICROPRICE']:.2f}")
+            st.caption(f"Spread {r['SPREAD_BPS']:.2f} bps · imbalance {r['IMBALANCE']:.0%}")
 
-    metrics = load_metrics(session, sym)
     if not metrics.empty and metrics["RSI_14"].notna().any():
         st.subheader("RSI 14 (Wilder)")
         rsi_line = alt.Chart(metrics).mark_line(interpolate="monotone", color=ACCENT, strokeWidth=2).encode(
