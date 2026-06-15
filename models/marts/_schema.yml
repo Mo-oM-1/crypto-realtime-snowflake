@@ -65,7 +65,7 @@ models:
         tests: [not_null]
 
   - name: fct_ohlcv_1min
-    description: Dynamic Table, full-history 1-minute OHLCV per symbol (target_lag 1 minute).
+    description: Incremental table (full-history 1-minute OHLCV per symbol) - pas une Dynamic Table car min_by/max_by ne sont pas maintenables incrementalement.
     columns:
       - name: symbol
         tests: [not_null]
@@ -73,7 +73,7 @@ models:
         tests: [not_null]
 
   - name: fct_orderbook_snapshots
-    description: Dynamic Table, order-book metrics per symbol & ingest_time (full history, target_lag 1 minute).
+    description: Dynamic Table, order-book metrics per symbol & ingest_time (full history, target_lag 5 minute - choix FinOps).
     columns:
       - name: symbol
         tests: [not_null]

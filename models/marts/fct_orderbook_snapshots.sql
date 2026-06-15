@@ -1,6 +1,6 @@
 {{ config(
     materialized='dynamic_table',
-    target_lag='1 minute',
+    target_lag='5 minute',
     snowflake_warehouse='WH_CRYPTO_XS',
     on_configuration_change='apply'
 ) }}

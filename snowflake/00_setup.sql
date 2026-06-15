@@ -44,14 +44,16 @@ CREATE USER IF NOT EXISTS SVC_CRYPTO
 GRANT ROLE CRYPTO_PIPELINE_ROLE TO USER SVC_CRYPTO;
 
 --    Attribue AUSSI le rôle à ton utilisateur humain (pour dbt / Cortex Code) :
---    >>> remplace TOBIASR par ton login Snowflake <<<
-GRANT ROLE CRYPTO_PIPELINE_ROLE TO USER TOBIASR;
+--    >>> remplace <TON_LOGIN_SNOWFLAKE> par ton login (visible dans Snowsight > profil) <<<
+GRANT ROLE CRYPTO_PIPELINE_ROLE TO USER <TON_LOGIN_SNOWFLAKE>;
 
 -- 5) Authentification key-pair (Snowpipe Streaming) -------------------
 --    Génère la clé en local :
 --      openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out rsa_key.p8 -nocrypt
 --      openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
 --    Clé publique enregistrée ci-dessous (rotation 2026-06-10).
+--    NB : une clé PUBLIQUE n'est pas un secret -> volontairement versionnée
+--    (la clé PRIVÉE, elle, n'est jamais commitée : cf. .gitignore).
 --    C'est SVC_CRYPTO que le consumer utilise (via profile.json).
 ALTER USER SVC_CRYPTO SET RSA_PUBLIC_KEY='MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9IHubNe3wN8TVr6E5OUDJe1tJ50Xn23++RHKHbN8x6FQre0GgF6xPSWck1U3JwbhVew6nygTB21bTUCX/OWo94tdiJbz/SnZw+MIIMebrmsz/CeJowhteLpaFhbeUcvy9NJPDabKnfcQHJ65EK0oCZRdCZGiXz/27XMfIXbG6f89EWt4G1AFIWZTWCT9QNIRATy5ijyE/ldOcMuXme8RXZldWpH5Zl8rP0hwdSr1uI7Fp2GiHIwK+UFDY6H/xCcC7c1d0cunZH1zF9JWPyaufFQN6KdqjyA9G5n7O35UHYnchPYBy9c/rCuwA9rijLYGe5hBGIas6IWBZxE9sCQXRQIDAQAB';
 
