@@ -118,6 +118,10 @@ Un agent IA natif Snowflake, **Cortex Code**, via **3 skills spécialisés et bo
 pas l'autonomie mais la **gouvernance** : **l'agent propose → la CI prouve (`ANALYTICS_CI`) → l'humain merge.**
 On **automatise la détection** (SQL planifié), la **remédiation reste agentique sous revue humaine**.
 
+> **Skills vs prompts** — à ne pas confondre : les **3 skills** sont des *capabilities* productisées et
+> versionnées (`.cortex/skills/*/SKILL.md`, avec contrat). `$realtime-marts` (dans `AGENTS.md`) est un
+> simple **prompt** (recette) pour itérer la couche marts — **pas un skill**.
+
 > 📑 Contrats détaillés des skills (entrée / sortie / garde-fous) : [`docs/skills.md`](./docs/skills.md).
 > 🔁 Boucles **rejouables et tracées** (pas des captures) : [`docs/runs/`](./docs/runs/) —
 > [self-heal de dérive](./docs/runs/schema-drift-selfheal.md) · [bug réel attrapé par un test](./docs/runs/caught-bug.md).
@@ -148,7 +152,7 @@ Mesuré en conditions réelles (BTC, ETH, SOL ; consumer actif) :
 | Latence d'ingestion (event -> réception), **p95** | **~0,13 s** (moy. ~0,10 s) |
 | Latence end-to-end (-> requêtable) | + commit Snowpipe ~5-10 s, bien sous le SLO de 15 s |
 | Débit | **~900 trades/s** (~280 000 / 5 min) |
-| Modèles dbt | staging -> intermediate -> marts (vues live + Dynamic Tables) |
+| Modèles dbt | staging -> intermediate -> marts (vues live + incrémental + 1 Dynamic Table) |
 | Tests dbt | **100 % verts** (not_null, unique, accepted_values, invariants) |
 | Couche de modélisation | **générée par l'agent Cortex Code** |
 
@@ -242,7 +246,9 @@ Toutes optionnelles ; les knobs de backpressure ont des défauts sains et ne se 
 │   ├── 06_ci_setup.sql           # environnement CI isole (ANALYTICS_CI, role, user de service)
 │   ├── 07_ml_anomaly.sql         # surveillance : detection d'anomalies (Cortex ML) + alerte
 │   ├── 08_raw_retention.sql      # purge RAW (borne le scan) - RAW = buffer, historique dans ANALYTICS
-│   └── 09_dev_setup.sql          # env DEV isole (ANALYTICS_DEV) - dev != prod
+│   ├── 09_dev_setup.sql          # env DEV isole (ANALYTICS_DEV) - dev != prod
+│   ├── 98_smoke_test.sql         # smoke test post-deploiement (comptes par table)
+│   └── 99_pause.sql / 99_resume.sql  # veille / reveil du pipeline (FinOps)
 ├── ingestion/                    # consumer temps reel (ingestion brute, NE flatten pas)
 │   ├── stream_to_snowflake.py    #   Binance WS (2 flux) -> file bornee -> Snowpipe Streaming -> RAW VARIANT
 │   ├── requirements.txt / Dockerfile / profile.json.example
