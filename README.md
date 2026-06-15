@@ -184,9 +184,21 @@ Latence event Binance -> réception : **moyenne ~0,10 s, p95 ~0,13 s** sur **~90
 
 ### Service temps réel : dashboard Streamlit (in Snowflake)
 
-![Dashboard Streamlit](docs/screenshots/dashboard.png)
+Application **multipage** (`st.navigation`) rafraîchie en continu sur les vues live (Snowpipe Streaming) : prix & carnet, microstructure (order-flow), cross-symbole, surveillance ML, santé du pipeline.
 
-OHLCV 1 min (close / VWAP), métriques d'order book (mid, spread, imbalance, microprice) et top movers, rafraîchis en continu sur les vues live (Snowpipe Streaming).
+| Prix & carnet | Santé du pipeline (SLO) |
+|---|---|
+| ![Prix & carnet](docs/screenshots/dashboard-prix.png) | ![Santé pipeline](docs/screenshots/dashboard-sante.png) |
+| Bougies OHLCV 1 min + volume, bandeau KPI (RSI, volatilité, spread, imbalance), order book live. | Statut color-codé, latence (moy / p95), débit, fraîcheur, et jauge « % du budget SLO ». |
+
+| Microstructure — CVD | Microstructure — order book ladder |
+|---|---|
+| ![CVD](docs/screenshots/dashboard-microstructure-cvd.png) | ![Order book ladder](docs/screenshots/dashboard-microstructure-orderbook.png) |
+| Cumulative Volume Delta (flux taker) : pression acheteuse / vendeuse nette. | Profondeur du carnet (DOM) : liquidité par niveau, bid vs ask. |
+
+**Journal d'événements** (bas de la page Santé) — alertes de fraîcheur **et** l'événement de **dérive de schéma** (`schema_drift:RAW_TRADES:xs`) loggés dans `pipeline_log` : la boucle monitoring → audit, visible.
+
+![Journal d'événements](docs/screenshots/dashboard-sante2.png)
 
 ## Quickstart
 
