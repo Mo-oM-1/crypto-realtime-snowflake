@@ -8,6 +8,8 @@ import json
 import queue
 from datetime import datetime, timedelta
 
+import pytest
+
 import stream_to_snowflake as si
 
 
@@ -198,3 +200,73 @@ def test_channel_reopens_and_retries_on_invalid_channel():
     assert tc.reopens == 1                  # le canal a ete rouvert une fois
     assert len(created) == 2                # canal initial + canal rouvert
     assert created[1].rows == [{"RECORD": {"k": 1}, "INGEST_TIME": FIXED_TS}]  # ecrit apres reopen
+
+
+def test_circuit_breaker_stops_reopen_storm_under_sustained_failure():
+    # Panne soutenue : TOUS les canaux echouent -> on ne doit PAS rouvrir a chaque ligne.
+    created = []
+
+    class FakeCh:
+        channel_name = "ch"
+
+        def append_row(self, row, offset):
+            raise RuntimeError("InvalidChannelError: invalid state")
+
+        def close(self):
+            pass
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def open_channel(self, name):
+            ch = FakeCh()
+            created.append(ch)
+            return (ch,)
+
+        def close(self):
+            pass
+
+    tc = si.TableChannel("RAW_TRADES", client_factory=FakeClient)
+    # 1re ligne : 1 reouverture-sonde, retry echoue -> backoff arme
+    with pytest.raises(Exception):
+        tc.append({"k": 1}, FIXED_TS)
+    n_after_first = len(created)            # initial + 1 reopen = 2
+    # lignes suivantes pendant le backoff : echec rapide, AUCUNE nouvelle reouverture
+    for _ in range(50):
+        with pytest.raises(Exception):
+            tc.append({"k": 2}, FIXED_TS)
+    assert len(created) == n_after_first    # pas de reopen-storm (circuit ouvert)
+    assert tc.reopens == 1
+
+
+def test_transient_error_does_not_reopen_channel():
+    # Un blip reseau (pas une invalidation de canal) ne doit PAS jeter le canal.
+    created = []
+
+    class FakeCh:
+        channel_name = "ch"
+
+        def append_row(self, row, offset):
+            raise RuntimeError("temporary network blip")  # pas un 'invalid channel'
+
+        def close(self):
+            pass
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def open_channel(self, name):
+            ch = FakeCh()
+            created.append(ch)
+            return (ch,)
+
+        def close(self):
+            pass
+
+    tc = si.TableChannel("RAW_TRADES", client_factory=FakeClient)
+    with pytest.raises(Exception):
+        tc.append({"k": 1}, FIXED_TS)
+    assert tc.reopens == 0                  # canal preserve
+    assert len(created) == 1

@@ -70,6 +70,12 @@ HEALTHCHECK_PORT     = int(os.environ.get("HEALTHCHECK_PORT", "8000"))       # e
 HEALTH_MAX_SILENCE_S = float(os.environ.get("HEALTH_MAX_SILENCE_S", "30"))   # silence max avant "stale" (zombie)
 HEALTH_GRACE_S       = float(os.environ.get("HEALTH_GRACE_SECONDS", "60"))   # fenetre de demarrage (pas encore de data = OK)
 
+# --- Resilience canal Snowpipe (circuit breaker) -----------------------------
+# Apres une reouverture qui echoue (panne soutenue : auth, quota, pipe supprime),
+# on N'OUVRE PLUS un canal par ligne (sinon ~900 reopen/s qui martelent Snowflake).
+# On attend ce backoff avant la prochaine reouverture-sonde.
+REOPEN_BACKOFF_S = float(os.environ.get("REOPEN_BACKOFF_SECONDS", "30"))
+
 os.environ.setdefault("SS_LOG_LEVEL", "warn")  # logs du SDK Snowpipe Streaming
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("crypto-ingest")
@@ -91,7 +97,8 @@ class TableChannel:
         self.table = table
         self.pipe = f"{table}-STREAMING"  # default pipe (auto-cree par Snowflake)
         self.offset = 0
-        self.reopens = 0  # nb de reouvertures de canal (observabilite)
+        self.reopens = 0              # nb de reouvertures de canal (observabilite)
+        self._reopen_blocked_until = 0.0  # circuit breaker : pas de reopen avant ce monotonic time
         self._open()
 
     def _open(self) -> None:
@@ -130,17 +137,38 @@ class TableChannel:
             str(self.offset),
         )
 
+    @staticmethod
+    def _is_invalid_channel(e: Exception) -> bool:
+        """Vrai uniquement pour une INVALIDATION de canal (pas un blip reseau transitoire)."""
+        s = str(e).lower()
+        return ("invalidchannel" in s or "invalid state" in s or "close and re-open" in s)
+
     def append(self, record: dict, ingest_ts: datetime) -> None:
-        # Resilience : un canal Snowpipe Streaming peut devenir INVALIDE (reset serveur,
-        # token...). Le SDK demande alors de "close and re-open the channel". On rouvre et
-        # on retente UNE fois. Les doublons eventuels sont absorbes par le dedup downstream
-        # (stg_trades deduplique par trade_id) -> ingestion idempotente cote marts.
+        # Resilience d'un canal Snowpipe Streaming INVALIDE ("close and re-open the channel").
+        # On rouvre + retente UNE fois ; les doublons sont absorbes par le dedup downstream
+        # (stg_trades par trade_id) -> idempotent cote marts.
         try:
             self._append_row(record, ingest_ts)
+            return
         except Exception as e:
-            log.warning("append %s a echoue (%s) -> reopen + retry", self.table, type(e).__name__)
+            # 1) Erreur transitoire (reseau...) -> NE PAS jeter le canal, on propage.
+            if not self._is_invalid_channel(e):
+                raise
+            # 2) Circuit breaker : un reopen a deja echoue recemment -> echec rapide (pas de
+            #    reopen par ligne, sinon ~900 reopen/s sous panne soutenue). write_errors compte.
+            if time.monotonic() < self._reopen_blocked_until:
+                raise
+            # 3) Invalidation ponctuelle (ou fin de backoff) -> 1 reouverture-sonde + retry.
+            log.warning("append %s : canal invalide -> reopen + retry", self.table)
             self._reopen()
-            self._append_row(record, ingest_ts)
+            try:
+                self._append_row(record, ingest_ts)
+            except Exception:
+                # La reouverture n'a pas suffi (panne soutenue) -> on arme le backoff.
+                self._reopen_blocked_until = time.monotonic() + REOPEN_BACKOFF_S
+                log.warning("Canal %s toujours KO apres reopen -> backoff %ss (circuit ouvert)",
+                            self.table, REOPEN_BACKOFF_S)
+                raise
 
     def status(self):
         return self.channel.get_channel_status()

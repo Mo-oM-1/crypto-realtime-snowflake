@@ -2,7 +2,7 @@
 -- FIXTURE : injecte une derive de schema controlee pour rejouer le self-heal.
 -- ---------------------------------------------------------------------
 -- Insere UN message @trade synthetique dans RAW_TRADES avec une cle NOUVELLE
--- (`xs`, qui simule un nouveau champ "x_signal") sous RECORD:data.
+-- (`xs`, un champ qui n'existe pas dans le payload Binance) sous RECORD:data.
 -- Le detecteur (04_drift_detection.sql) la verra comme une cle hors `known_keys`.
 --
 -- Sentinelle : trade id 999000111 -> permet un cleanup EXACT (cf. cleanup_schema_drift.sql).
