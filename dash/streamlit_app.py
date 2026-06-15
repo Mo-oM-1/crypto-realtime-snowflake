@@ -426,27 +426,57 @@ def page_surveillance():
 @st.fragment(run_every=10)
 def page_sante():
     st.header("Sante du pipeline")
+
     try:
         slo = load_slo(session)
-        if not slo.empty:
-            s = slo.iloc[0]
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Latence moy (s)", "-" if pd.isna(s["AVG_S"]) else s["AVG_S"])
-            c2.metric("Latence p95 (s)", "-" if pd.isna(s["P95_S"]) else s["P95_S"])
-            c3.metric("Trades / s", "-" if pd.isna(s["TRADES_PER_S"]) else s["TRADES_PER_S"])
-            fr = s["FRESHNESS_S"]
-            c4.metric("Fraicheur (s)", "-" if pd.isna(fr) else int(fr))
-            if not pd.isna(fr) and int(fr) > 120:
-                st.warning("Donnees obsoletes (> 120 s) - le consumer tourne-t-il ?")
     except Exception as exc:
         logger.exception("panneau SLO indisponible")
         st.warning(f"SLO indisponible: {exc}")
+        slo = None
+
+    if slo is not None and not slo.empty:
+        s = slo.iloc[0]
+        fresh = None if pd.isna(s["FRESHNESS_S"]) else int(s["FRESHNESS_S"])
+
+        # Banniere de statut global (lecture immediate)
+        if fresh is None:
+            st.info("Aucune donnee recente a evaluer.")
+        elif fresh <= 120:
+            st.success(f"Pipeline en bonne sante — donnees fraiches ({fresh} s).")
+        else:
+            st.error(f"Donnees obsoletes ({fresh} s > 120 s) — le consumer tourne-t-il ?")
+
+        # KPI (avec la cible SLO en infobulle)
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Latence moy", "-" if pd.isna(s["AVG_S"]) else f"{s['AVG_S']:.2f} s")
+        c2.metric("Latence p95", "-" if pd.isna(s["P95_S"]) else f"{s['P95_S']:.2f} s", help="SLO < 15 s")
+        c3.metric("Debit", "-" if pd.isna(s["TRADES_PER_S"]) else f"{s['TRADES_PER_S']:.0f} /s")
+        c4.metric("Fraicheur", "-" if fresh is None else f"{fresh} s", help="SLO <= 120 s")
+
+        # Jauge : % du budget SLO consomme (vert sous la cible, rouge au-dela)
+        rows = []
+        if fresh is not None:
+            rows.append({"SLO": "Fraicheur (/ 120 s)", "pct": fresh / 120 * 100})
+        if not pd.isna(s["P95_S"]):
+            rows.append({"SLO": "Latence p95 (/ 15 s)", "pct": s["P95_S"] / 15 * 100})
+        if rows:
+            budget = pd.DataFrame(rows)
+            bar = alt.Chart(budget).mark_bar(cornerRadius=3, height=20).encode(
+                x=alt.X("pct:Q", title="% du budget SLO consomme", scale=alt.Scale(domain=[0, 120])),
+                y=alt.Y("SLO:N", title=None, sort="-x"),
+                color=alt.condition("datum.pct <= 100", alt.value(UP), alt.value(DOWN)),
+                tooltip=[alt.Tooltip("SLO:N", title="SLO"), alt.Tooltip("pct:Q", format=".0f", title="% budget")])
+            rule = alt.Chart(pd.DataFrame({"x": [100]})).mark_rule(
+                strokeDash=[5, 4], color=REF).encode(x="x:Q")
+            st.altair_chart(_style(bar + rule, 130), theme=None, width="stretch")
+
+    # Journal d'evenements (pipeline_log)
     try:
         events = load_events(session)
         if not events.empty:
             st.subheader("Derniers evenements")
             st.caption("Alertes fraicheur / anomalies / echecs de tests")
-            st.dataframe(events, width="stretch")
+            st.dataframe(events, width="stretch", hide_index=True)
     except Exception as exc:
         logger.warning("journal pipeline_log indisponible: %s", exc)
 
