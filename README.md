@@ -200,6 +200,10 @@ Application **multipage** (`st.navigation`) rafraîchie en continu sur les vues 
 | ![CVD](docs/screenshots/dashboard-microstructure-cvd.png) | ![Order book ladder](docs/screenshots/dashboard-microstructure-orderbook.png) |
 | Cumulative Volume Delta (flux taker) : pression acheteuse / vendeuse nette. | Profondeur du carnet (DOM) : liquidité par niveau, bid vs ask. |
 
+**Surveillance — détection d'anomalies de volume (Cortex ML)** : un modèle `SNOWFLAKE.ML.ANOMALY_DETECTION` apprend le volume normal par symbole et flague ce qui sort de la **plage attendue** (points rouges hors bande de confiance) — pas un seuil fixe, un modèle entraîné.
+
+![Anomalies ML](docs/screenshots/dashboard-anomalies.png)
+
 **Journal d'événements** (bas de la page Santé) — alertes de fraîcheur **et** l'événement de **dérive de schéma** (`schema_drift:RAW_TRADES:xs`) loggés dans `pipeline_log` : la boucle monitoring → audit, visible.
 
 ![Journal d'événements](docs/screenshots/dashboard-sante2.png)
