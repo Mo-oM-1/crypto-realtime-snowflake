@@ -182,6 +182,10 @@ Un test **auto-généré** détecte un carnet d'ordres croisé (`best_bid > best
 
 Latence event Binance -> réception : **moyenne ~0,10 s, p95 ~0,13 s** sur **~900 trades/s** (BTC / ETH / SOL), bien en dessous du SLO de 15 s.
 
+### Cas d'usage & valeur
+
+Au-delà de la démo technique, le dashboard sert un usage **concret** : donner à un **trader indépendant** les signaux d'**order-flow** (pression acheteuse / vendeuse via CVD, liquidité du carnet, **volumes anormaux** détectés par ML) en **langage clair** (page « Vue trader »), **sans terminal pro coûteux**. Pensé pour l'**aide à la décision** (pas l'exécution ni le HFT), **validé par un utilisateur retail réel**, et opéré à **coût quasi nul** (free tier AWS + Snowflake).
+
 ### Service temps réel : dashboard Streamlit (in Snowflake)
 
 Application **multipage** (`st.navigation`) rafraîchie en continu sur les vues live (Snowpipe Streaming) : prix & carnet, microstructure (order-flow), cross-symbole, surveillance ML, santé du pipeline.

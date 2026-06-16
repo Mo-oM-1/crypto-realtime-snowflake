@@ -191,12 +191,19 @@ def page_home():
     )
     st.markdown(
         f"""
-        <div style="text-align:center; padding-top:4rem">
+        <div style="text-align:center; padding-top:3.2rem">
           <h1 style="font-size:3.2rem; margin:0">Crypto Real-Time</h1>
-          <p style="color:#64748b; font-size:1.1rem; margin:0.3rem 0 0">
-            Snowflake &middot; dbt &middot; Cortex ML
+          <p style="color:#1e3a8a; font-size:1.25rem; margin:0.5rem 0 0; font-weight:600">
+            Poste de surveillance du flux d'ordres crypto
           </p>
-          <div style="margin-top:2.5rem">{svg}</div>
+          <p style="color:#64748b; font-size:1rem; margin:0.45rem auto 0; max-width:560px">
+            Order-flow (qui achete / qui vend), anomalies de volume (ML) et fraicheur des donnees
+            &mdash; pour lire le marche et decider vite, sans terminal pro couteux.
+          </p>
+          <div style="margin-top:2rem">{svg}</div>
+          <p style="color:#94a3b8; font-size:0.85rem; margin-top:1.6rem">
+            Snowflake &middot; dbt &middot; Cortex ML &middot; aide a la decision (pas un conseil d'investissement)
+          </p>
         </div>
         """,
         unsafe_allow_html=True,
