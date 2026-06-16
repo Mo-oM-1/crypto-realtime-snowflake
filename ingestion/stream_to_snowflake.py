@@ -160,13 +160,13 @@ class TableChannel:
                 raise
             # 3) Invalidation ponctuelle (ou fin de backoff) -> 1 reouverture-sonde + retry.
             log.warning("append %s : canal invalide -> reopen + retry", self.table)
-            self._reopen()
             try:
-                self._append_row(record, ingest_ts)
+                self._reopen()                       # DANS le try : si open_channel echoue
+                self._append_row(record, ingest_ts)  # (Snowflake injoignable), on arme aussi le backoff
             except Exception:
-                # La reouverture n'a pas suffi (panne soutenue) -> on arme le backoff.
+                # Le reopen OU le retry a echoue (panne soutenue) -> circuit ouvert.
                 self._reopen_blocked_until = time.monotonic() + REOPEN_BACKOFF_S
-                log.warning("Canal %s toujours KO apres reopen -> backoff %ss (circuit ouvert)",
+                log.warning("Canal %s toujours KO (reopen/retry) -> backoff %ss (circuit ouvert)",
                             self.table, REOPEN_BACKOFF_S)
                 raise
 

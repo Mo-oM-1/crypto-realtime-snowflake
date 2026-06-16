@@ -270,3 +270,36 @@ def test_transient_error_does_not_reopen_channel():
         tc.append({"k": 1}, FIXED_TS)
     assert tc.reopens == 0                  # canal preserve
     assert len(created) == 1
+
+
+def test_circuit_breaker_when_reopen_itself_fails():
+    # Panne ou open_channel() ECHOUE (Snowflake injoignable) : le backoff doit quand meme
+    # s'armer -> pas de storm de reopen (le cas le plus probable d'une vraie panne).
+    created = []
+
+    class FailingClient:
+        def __init__(self, **kwargs):
+            created.append(1)
+            if len(created) > 1:            # le 1er client s'ouvre ; les reopen echouent
+                raise RuntimeError("InvalidChannelError: cannot open channel")
+
+        def open_channel(self, name):
+            class Ch:
+                channel_name = "ch"
+
+                def append_row(self, row, off):
+                    raise RuntimeError("InvalidChannelError: invalid state")
+
+                def close(self):
+                    pass
+
+            return (Ch(),)
+
+        def close(self):
+            pass
+
+    tc = si.TableChannel("RAW_TRADES", client_factory=FailingClient)
+    for _ in range(50):
+        with pytest.raises(Exception):
+            tc.append({"k": 1}, FIXED_TS)
+    assert tc.reopens <= 1                  # 1 sonde puis backoff, pas de storm cote open_channel

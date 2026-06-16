@@ -28,11 +28,40 @@ resource "aws_security_group" "consumer" {
     cidr_blocks = [var.allowed_ssh_cidr]
   }
 
+  # Egress SCOPED (au lieu de tout-protocole) : uniquement les ports reellement utilises.
   egress {
-    description = "Tout sortant (Binance WS + Snowflake 443)"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS / WSS (Binance + Snowpipe Streaming)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    description = "HTTP (apt au bootstrap)"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    description = "DNS (UDP + TCP)"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    description = "DNS (TCP)"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    description = "NTP (sync horloge)"
+    from_port   = 123
+    to_port     = 123
+    protocol    = "udp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
@@ -58,5 +87,11 @@ resource "aws_instance" "consumer" {
   tags = {
     Name    = "CryptoServer"
     Project = "crypto-realtime"
+  }
+
+  # Repro stricte : ne PAS recreer la VM si une AMI Ubuntu plus recente sort
+  # (data.aws_ami.most_recent ferait changer l'id). On fige l'instance en place.
+  lifecycle {
+    ignore_changes = [ami]
   }
 }
